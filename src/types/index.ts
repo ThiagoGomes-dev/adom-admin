@@ -8,6 +8,8 @@ export interface ProductVariantOption {
   label: string;
   /** valor extra (ex: código hex de cor) usado só para exibição */
   meta?: string;
+  /** foto do produto (uma das URLs em `images`) a mostrar quando esta opção é selecionada */
+  image?: string;
 }
 
 export interface ProductVariantGroup {

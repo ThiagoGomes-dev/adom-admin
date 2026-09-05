@@ -88,7 +88,7 @@ export function ProductForm({ categories, product }: ProductFormProps) {
     );
   };
 
-  const updateVariantOption = (groupId: string, optionId: string, field: 'label' | 'meta', value: string) => {
+  const updateVariantOption = (groupId: string, optionId: string, field: 'label' | 'meta' | 'image', value: string) => {
     setVariants((prev) =>
       prev.map((g) =>
         g.id === groupId
@@ -326,31 +326,62 @@ export function ProductForm({ categories, product }: ProductFormProps) {
                 </button>
               </div>
 
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 space-y-3">
                 {group.options.map((option) => (
-                  <div key={option.id} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={option.label}
-                      onChange={(e) => updateVariantOption(group.id, option.id, 'label', e.target.value)}
-                      placeholder="Ex: Azul Marinho"
-                      className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                    {isColorGroup(group.name) && (
+                  <div key={option.id} className="rounded-lg border border-slate-100 p-2">
+                    <div className="flex items-center gap-2">
                       <input
-                        type="color"
-                        value={option.meta || '#000000'}
-                        onChange={(e) => updateVariantOption(group.id, option.id, 'meta', e.target.value)}
-                        className="h-9 w-12 shrink-0 cursor-pointer rounded-lg border border-slate-300"
+                        type="text"
+                        value={option.label}
+                        onChange={(e) => updateVariantOption(group.id, option.id, 'label', e.target.value)}
+                        placeholder="Ex: Azul Marinho"
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
                       />
+                      {isColorGroup(group.name) && (
+                        <input
+                          type="color"
+                          value={option.meta || '#000000'}
+                          onChange={(e) => updateVariantOption(group.id, option.id, 'meta', e.target.value)}
+                          className="h-9 w-12 shrink-0 cursor-pointer rounded-lg border border-slate-300"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeVariantOption(group.id, option.id)}
+                        className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+
+                    {isColorGroup(group.name) && (
+                      <div className="mt-2">
+                        {images.length === 0 ? (
+                          <p className="text-xs text-slate-400">Adicione fotos acima para poder vincular a esta cor.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {images.map((url) => {
+                              const selected = option.image === url;
+                              return (
+                                <button
+                                  key={url}
+                                  type="button"
+                                  onClick={() =>
+                                    updateVariantOption(group.id, option.id, 'image', selected ? '' : url)
+                                  }
+                                  className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-2 ${
+                                    selected ? 'border-slate-900' : 'border-transparent opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={selected ? 'Foto vinculada a esta cor (clique para remover)' : 'Vincular esta foto a esta cor'}
+                                >
+                                  <Image src={url} alt="" fill sizes="48px" className="object-cover" />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => removeVariantOption(group.id, option.id)}
-                      className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                    >
-                      <X size={14} />
-                    </button>
                   </div>
                 ))}
                 <button

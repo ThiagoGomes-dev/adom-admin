@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ADOM — Painel Administrativo
 
-## Getting Started
+Sistema separado do site público (`Adom-Website`), pra gerenciar produtos e estoque. Expõe uma
+API pública de leitura (`/api/products`) que o site consome no lugar do catálogo estático.
 
-First, run the development server:
+## Telas
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- `/login` — acesso restrito (Supabase Auth)
+- `/produtos` — lista, busca, filtro por categoria/estoque, edição rápida de estoque
+- `/produtos/novo` e `/produtos/[id]` — criar/editar produto (dados, fotos, variantes flexíveis)
+- `/categorias` — CRUD de categorias
+
+## Configuração inicial (uma vez só)
+
+### 1. Criar o projeto no Supabase
+
+1. Acesse [supabase.com](https://supabase.com), crie uma conta e um novo projeto (grátis).
+2. No painel do projeto, vá em **SQL Editor > New query**, cole todo o conteúdo de
+   [`supabase/schema.sql`](./supabase/schema.sql) e rode. Isso cria as tabelas `products` e
+   `categories`, as políticas de segurança (RLS) e o bucket de imagens `product-images`.
+3. Em **Authentication > Users**, crie manualmente o usuário (e-mail/senha) que vai logar no
+   painel — não existe cadastro público, é só você/quem for administrar.
+
+### 2. Configurar as variáveis de ambiente
+
+Copie `.env.local.example` para `.env.local` e preencha com os dados do seu projeto Supabase
+(em **Project Settings > API**):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+STOREFRONT_ORIGIN=https://seu-site.vercel.app
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3. Rodar localmente
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Abre em [http://localhost:3000](http://localhost:3000) (redireciona pro login).
 
-## Learn More
+## Deploy no Vercel
 
-To learn more about Next.js, take a look at the following resources:
+Projeto separado do site — importa este repositório como um **novo projeto** no Vercel e
+configura as mesmas 3 variáveis de ambiente acima (Project Settings > Environment Variables).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Integração com o site (Adom-Website)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+O site deve buscar os produtos em `GET https://<esse-projeto>.vercel.app/api/products` no lugar
+de importar `src/data/demo/products.ts`. A resposta já vem no mesmo formato do tipo `Product`
+usado pelo site, incluindo `stockQuantity`.

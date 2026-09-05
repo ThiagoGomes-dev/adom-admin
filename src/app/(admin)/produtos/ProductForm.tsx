@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { Plus, Trash2, X, Loader2 } from 'lucide-react';
 import type { Category, Product, ProductVariantGroup } from '@/types';
 import { slugify } from '@/lib/slug';
+import { compressImage } from '@/lib/compressImage';
 import { createClient } from '@/lib/supabase/client';
 import { createProduct, updateProduct } from './actions';
 import type { ProductInput } from '@/lib/mappers';
@@ -54,8 +55,15 @@ export function ProductForm({ categories, product }: ProductFormProps) {
     const uploaded: string[] = [];
 
     for (const file of Array.from(files)) {
+      let toUpload: File;
+      try {
+        toUpload = await compressImage(file);
+      } catch {
+        toUpload = file; // se a compressão falhar por algum motivo, sobe o arquivo original
+      }
+
       const path = `${Date.now()}-${slugify(file.name)}`;
-      const { error: uploadError } = await supabase.storage.from('product-images').upload(path, file);
+      const { error: uploadError } = await supabase.storage.from('product-images').upload(path, toUpload);
       if (uploadError) {
         setError(`Erro ao enviar ${file.name}: ${uploadError.message}`);
         continue;

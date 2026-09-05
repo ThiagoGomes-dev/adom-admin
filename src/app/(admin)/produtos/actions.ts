@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { productInputToRow, rowToProduct, type ProductInput, type ProductRow } from '@/lib/mappers';
+import { extractStoragePath } from '@/lib/storagePath';
 import type { Product } from '@/types';
 
 export async function listProducts(): Promise<Product[]> {
@@ -48,6 +49,14 @@ export async function updateStock(id: string, stockQuantity: number): Promise<{ 
 
 export async function deleteProduct(id: string): Promise<{ error?: string }> {
   const supabase = await createClient();
+
+  const { data: existing } = await supabase.from('products').select('images').eq('id', id).maybeSingle();
+  const existingImages = (existing?.images ?? []) as string[];
+  const paths = existingImages.map(extractStoragePath).filter((p): p is string => Boolean(p));
+  if (paths.length) {
+    await supabase.storage.from('product-images').remove(paths);
+  }
+
   const { error } = await supabase.from('products').delete().eq('id', id);
   if (error) return { error: error.message };
   revalidatePath('/produtos');

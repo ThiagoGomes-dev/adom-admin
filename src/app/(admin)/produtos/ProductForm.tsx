@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Plus, Trash2, X, Loader2 } from 'lucide-react';
+import { Plus, Trash2, X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Category, Product, ProductVariantGroup } from '@/types';
 import { slugify } from '@/lib/slug';
 import { compressImage } from '@/lib/compressImage';
+import { extractStoragePath } from '@/lib/storagePath';
 import { createClient } from '@/lib/supabase/client';
 import { createProduct, updateProduct } from './actions';
 import type { ProductInput } from '@/lib/mappers';
@@ -76,7 +77,29 @@ export function ProductForm({ categories, product }: ProductFormProps) {
     setUploading(false);
   };
 
-  const removeImage = (url: string) => setImages((prev) => prev.filter((img) => img !== url));
+  const removeImage = async (url: string) => {
+    setImages((prev) => prev.filter((img) => img !== url));
+    // desvincula essa foto de qualquer opção de variante que a usava
+    setVariants((prev) =>
+      prev.map((g) => ({ ...g, options: g.options.map((o) => (o.image === url ? { ...o, image: '' } : o)) })),
+    );
+
+    const path = extractStoragePath(url);
+    if (path) {
+      const supabase = createClient();
+      await supabase.storage.from('product-images').remove([path]);
+    }
+  };
+
+  const moveImage = (index: number, direction: -1 | 1) => {
+    setImages((prev) => {
+      const target = index + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
 
   const addVariantGroup = () => {
     setVariants((prev) => [...prev, { id: nextTempId(), name: '', options: [] }]);
@@ -277,10 +300,16 @@ export function ProductForm({ categories, product }: ProductFormProps) {
       {/* Imagens */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Fotos</h2>
+        <p className="mt-1 text-xs text-slate-400">A primeira foto é a capa — a que aparece na lista e no site.</p>
         <div className="mt-4 flex flex-wrap gap-3">
-          {images.map((url) => (
+          {images.map((url, index) => (
             <div key={url} className="group relative h-24 w-24 overflow-hidden rounded-lg border border-slate-200">
               <Image src={url} alt="" fill sizes="96px" className="object-cover" />
+              {index === 0 && (
+                <span className="absolute left-1 top-1 rounded bg-slate-900/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  Capa
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => removeImage(url)}
@@ -288,6 +317,26 @@ export function ProductForm({ categories, product }: ProductFormProps) {
               >
                 <X size={12} />
               </button>
+              <div className="absolute inset-x-0 bottom-0 flex justify-center gap-1 bg-gradient-to-t from-black/70 to-transparent p-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() => moveImage(index, -1)}
+                  className="rounded-full bg-white/90 p-1 text-slate-700 disabled:pointer-events-none disabled:opacity-30"
+                  title="Mover pra trás"
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                <button
+                  type="button"
+                  disabled={index === images.length - 1}
+                  onClick={() => moveImage(index, 1)}
+                  className="rounded-full bg-white/90 p-1 text-slate-700 disabled:pointer-events-none disabled:opacity-30"
+                  title="Mover pra frente"
+                >
+                  <ChevronRight size={12} />
+                </button>
+              </div>
             </div>
           ))}
           <label className="flex h-24 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 hover:border-slate-400 hover:text-slate-500">

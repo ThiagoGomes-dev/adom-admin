@@ -41,3 +41,23 @@ export interface Category {
   slug: string;
   icon?: string;
 }
+
+export type PaymentMethod = 'pix' | 'credito' | 'dinheiro';
+
+export interface SaleItem {
+  productId: string;
+  /** nome do produto no momento da venda (não muda se o produto for renomeado depois) */
+  name: string;
+  quantity: number;
+  /** preço unitário no momento da venda */
+  unitPrice: number;
+}
+
+export interface Sale {
+  id: string;
+  items: SaleItem[];
+  total: number;
+  paymentMethod: PaymentMethod | null;
+  note?: string;
+  createdAt: string;
+}

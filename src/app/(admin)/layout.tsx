@@ -21,6 +21,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               >
                 Categorias
               </Link>
+              <Link
+                href="/vendas"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Vendas
+              </Link>
             </nav>
           </div>
           <LogoutButton />

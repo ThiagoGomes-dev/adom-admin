@@ -1,7 +1,13 @@
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { listSales } from './actions';
+import { listProducts } from '../produtos/actions';
 import { formatPrice } from '@/lib/currency';
+import { MonthlyRevenueChart, type MonthlyRevenuePoint } from './MonthlyRevenueChart';
+import { TopProductsChart } from './TopProductsChart';
+import { LowStockAlert } from './LowStockAlert';
+
+const MONTHS_TO_SHOW = 6;
 
 const PAYMENT_LABELS: Record<string, string> = {
   pix: 'Pix',
@@ -20,7 +26,7 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub: st
 }
 
 export default async function VendasPage() {
-  const sales = await listSales();
+  const [sales, products] = await Promise.all([listSales(), listProducts()]);
 
   const now = new Date();
   const isToday = (d: Date) => d.toDateString() === now.toDateString();
@@ -42,7 +48,33 @@ export default async function VendasPage() {
       }, {}),
   )
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+    .slice(0, 5)
+    .map(([name, quantity]) => ({ name, quantity }));
+
+  const monthKeys: string[] = [];
+  for (let i = MONTHS_TO_SHOW - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthKeys.push(`${d.getFullYear()}-${d.getMonth()}`);
+  }
+  const monthLabels: Record<string, string> = {};
+  monthKeys.forEach((key) => {
+    const [year, month] = key.split('-').map(Number);
+    monthLabels[key] = new Date(year, month, 1)
+      .toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+      .replace('.', '');
+  });
+
+  const revenueByMonth = sales.reduce<Record<string, number>>((acc, s) => {
+    const d = new Date(s.createdAt);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    if (key in monthLabels) acc[key] = (acc[key] ?? 0) + s.total;
+    return acc;
+  }, {});
+
+  const monthlyRevenue: MonthlyRevenuePoint[] = monthKeys.map((key) => ({
+    label: monthLabels[key],
+    total: revenueByMonth[key] ?? 0,
+  }));
 
   return (
     <div>
@@ -62,23 +94,28 @@ export default async function VendasPage() {
         <StatCard label="Total registrado" value={formatPrice(totalGeral)} sub={`${sales.length} venda(s) no total`} />
       </div>
 
-      <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Mais vendidos no mês</h2>
-        {topProdutosMes.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-400">Nenhuma venda registrada este mês ainda.</p>
-        ) : (
-          <ol className="mt-3 space-y-2">
-            {topProdutosMes.map(([name, quantity], i) => (
-              <li key={name} className="flex items-center justify-between text-sm">
-                <span className="text-slate-900">
-                  <span className="mr-2 text-slate-400">{i + 1}º</span>
-                  {name}
-                </span>
-                <span className="font-semibold text-slate-600">{quantity} unid.</span>
-              </li>
-            ))}
-          </ol>
-        )}
+      <LowStockAlert products={products} />
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Faturamento por mês (últimos {MONTHS_TO_SHOW})
+          </h2>
+          <div className="mt-3">
+            <MonthlyRevenueChart data={monthlyRevenue} />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Mais vendidos no mês</h2>
+          {topProdutosMes.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">Nenhuma venda registrada este mês ainda.</p>
+          ) : (
+            <div className="mt-3">
+              <TopProductsChart data={topProdutosMes} />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white">

@@ -36,6 +36,7 @@ export async function registerSale(input: RegisterSaleInput): Promise<{ error?: 
   if (error) return { error: error.message };
 
   revalidatePath('/vendas');
+  revalidatePath('/dashboard');
   revalidatePath('/produtos');
   return { id: data as string };
 }

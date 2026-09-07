@@ -10,6 +10,7 @@ import { compressImage } from '@/lib/compressImage';
 import { extractStoragePath } from '@/lib/storagePath';
 import { createClient } from '@/lib/supabase/client';
 import { createProduct, updateProduct } from './actions';
+import { createCategory } from '../categorias/actions';
 import type { ProductInput } from '@/lib/mappers';
 
 interface ProductFormProps {
@@ -29,7 +30,12 @@ export function ProductForm({ categories, product }: ProductFormProps) {
   const [slugTouched, setSlugTouched] = useState(isEditing);
   const [description, setDescription] = useState(product?.description ?? '');
   const [shortDescription, setShortDescription] = useState(product?.shortDescription ?? '');
+  const [categoryList, setCategoryList] = useState(categories);
   const [category, setCategory] = useState(product?.category ?? categories[0]?.slug ?? '');
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [price, setPrice] = useState(String(product?.price ?? ''));
   const [promoPrice, setPromoPrice] = useState(product?.promoPrice ? String(product.promoPrice) : '');
   const [stockQuantity, setStockQuantity] = useState(String(product?.stockQuantity ?? 0));
@@ -137,6 +143,32 @@ export function ProductForm({ categories, product }: ProductFormProps) {
 
   const isColorGroup = (groupName: string) => /cor/i.test(groupName);
 
+  const openCategoryModal = () => {
+    setNewCategoryName('');
+    setCategoryError(null);
+    setShowCategoryModal(true);
+  };
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    setCategorySaving(true);
+    setCategoryError(null);
+
+    const slug = slugify(newCategoryName);
+    const result = await createCategory({ name: newCategoryName, slug });
+
+    setCategorySaving(false);
+
+    if (result.error) {
+      setCategoryError(result.error);
+      return;
+    }
+
+    setCategoryList((prev) => [...prev, { id: crypto.randomUUID(), name: newCategoryName, slug }]);
+    setCategory(slug);
+    setShowCategoryModal(false);
+  };
+
   const handleSubmit = async () => {
     setError(null);
 
@@ -223,13 +255,22 @@ export function ProductForm({ categories, product }: ProductFormProps) {
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-slate-700">Categoria</label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-slate-700">Categoria</label>
+              <button
+                type="button"
+                onClick={openCategoryModal}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
+              >
+                <Plus size={13} /> nova categoria
+              </button>
+            </div>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
             >
-              {categories.map((c) => (
+              {categoryList.map((c) => (
                 <option key={c.id} value={c.slug}>
                   {c.name}
                 </option>
@@ -470,6 +511,50 @@ export function ProductForm({ categories, product }: ProductFormProps) {
           Cancelar
         </button>
       </div>
+
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-900">Nova categoria</h3>
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <input
+              type="text"
+              autoFocus
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
+              placeholder="Nome da categoria"
+              className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+            />
+            {categoryError && <p className="mt-2 text-sm text-red-600">{categoryError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(false)}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateCategory}
+                disabled={categorySaving || !newCategoryName.trim()}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {categorySaving ? 'Criando...' : 'Criar categoria'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

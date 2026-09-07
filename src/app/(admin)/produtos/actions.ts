@@ -25,6 +25,7 @@ export async function createProduct(input: ProductInput): Promise<{ error?: stri
   const { error } = await supabase.from('products').insert(productInputToRow(input));
   if (error) return { error: error.message };
   revalidatePath('/produtos');
+  revalidatePath('/dashboard');
   return {};
 }
 
@@ -33,6 +34,7 @@ export async function updateProduct(id: string, input: ProductInput): Promise<{ 
   const { error } = await supabase.from('products').update(productInputToRow(input)).eq('id', id);
   if (error) return { error: error.message };
   revalidatePath('/produtos');
+  revalidatePath('/dashboard');
   return {};
 }
 
@@ -44,6 +46,7 @@ export async function updateStock(id: string, stockQuantity: number): Promise<{ 
     .eq('id', id);
   if (error) return { error: error.message };
   revalidatePath('/produtos');
+  revalidatePath('/dashboard');
   return {};
 }
 
@@ -60,5 +63,6 @@ export async function deleteProduct(id: string): Promise<{ error?: string }> {
   const { error } = await supabase.from('products').delete().eq('id', id);
   if (error) return { error: error.message };
   revalidatePath('/produtos');
+  revalidatePath('/dashboard');
   return {};
 }

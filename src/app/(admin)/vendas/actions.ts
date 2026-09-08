@@ -40,3 +40,18 @@ export async function registerSale(input: RegisterSaleInput): Promise<{ error?: 
   revalidatePath('/produtos');
   return { id: data as string };
 }
+
+/**
+ * Exclui uma venda registrada errada e devolve ao estoque a quantidade de
+ * cada item vendido, via `delete_sale` no banco.
+ */
+export async function deleteSale(id: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('delete_sale', { p_sale_id: id });
+  if (error) return { error: error.message };
+
+  revalidatePath('/vendas');
+  revalidatePath('/dashboard');
+  revalidatePath('/produtos');
+  return {};
+}

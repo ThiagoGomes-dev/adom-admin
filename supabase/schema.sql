@@ -179,3 +179,32 @@ $$;
 
 revoke all on function register_sale(jsonb, text, text) from public;
 grant execute on function register_sale(jsonb, text, text) to authenticated;
+
+-- Exclui uma venda e devolve ao estoque a quantidade de cada item vendido
+-- (para o caso de a venda ter sido registrada errada e precisar ser refeita).
+create or replace function delete_sale(p_sale_id uuid)
+returns void
+language plpgsql
+as $$
+declare
+  v_sale sales%rowtype;
+  v_item jsonb;
+begin
+  select * into v_sale from sales where id = p_sale_id for update;
+  if not found then
+    raise exception 'Venda não encontrada';
+  end if;
+
+  for v_item in select * from jsonb_array_elements(v_sale.items) loop
+    update products
+      set stock_quantity = stock_quantity + (v_item->>'quantity')::int,
+          available = (stock_quantity + (v_item->>'quantity')::int) > 0
+      where id = (v_item->>'product_id')::uuid;
+  end loop;
+
+  delete from sales where id = p_sale_id;
+end;
+$$;
+
+revoke all on function delete_sale(uuid) from public;
+grant execute on function delete_sale(uuid) to authenticated;

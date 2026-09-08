@@ -7,6 +7,7 @@ export interface ProductRow {
   name: string;
   description: string;
   short_description: string | null;
+  cost_price: number;
   price: number;
   promo_price: number | null;
   images: string[];
@@ -32,6 +33,7 @@ export function rowToProduct(row: ProductRow): Product {
     name: row.name,
     description: row.description,
     shortDescription: row.short_description ?? undefined,
+    costPrice: Number(row.cost_price ?? 0),
     price: Number(row.price),
     promoPrice: row.promo_price != null ? Number(row.promo_price) : undefined,
     images: row.images ?? [],
@@ -59,6 +61,7 @@ export interface ProductInput {
   name: string;
   description: string;
   shortDescription?: string;
+  costPrice: number;
   price: number;
   promoPrice?: number;
   images: string[];
@@ -72,8 +75,9 @@ export interface ProductInput {
 
 export interface SaleRow {
   id: string;
-  items: Array<{ product_id: string; name: string; quantity: number; unit_price: number }>;
+  items: Array<{ product_id: string; name: string; quantity: number; unit_price: number; unit_cost: number }>;
   total: number;
+  total_cost: number;
   payment_method: string | null;
   note: string | null;
   created_at: string;
@@ -87,8 +91,10 @@ export function rowToSale(row: SaleRow): Sale {
       name: i.name,
       quantity: i.quantity,
       unitPrice: Number(i.unit_price),
+      unitCost: Number(i.unit_cost ?? 0),
     })),
     total: Number(row.total),
+    totalCost: Number(row.total_cost ?? 0),
     paymentMethod: (row.payment_method as PaymentMethod) ?? null,
     note: row.note ?? undefined,
     createdAt: row.created_at,
@@ -101,6 +107,7 @@ export function productInputToRow(input: ProductInput) {
     name: input.name,
     description: input.description,
     short_description: input.shortDescription || null,
+    cost_price: input.costPrice,
     price: input.price,
     promo_price: input.promoPrice ?? null,
     images: input.images,

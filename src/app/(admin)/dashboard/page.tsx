@@ -31,6 +31,14 @@ export default async function DashboardPage() {
   const totalMes = salesMonth.reduce((sum, s) => sum + s.total, 0);
   const totalGeral = sales.reduce((sum, s) => sum + s.total, 0);
 
+  const custoHoje = salesToday.reduce((sum, s) => sum + s.totalCost, 0);
+  const custoMes = salesMonth.reduce((sum, s) => sum + s.totalCost, 0);
+  const custoGeral = sales.reduce((sum, s) => sum + s.totalCost, 0);
+
+  const lucroHoje = totalHoje - custoHoje;
+  const lucroMes = totalMes - custoMes;
+  const lucroGeral = totalGeral - custoGeral;
+
   const topProdutosMes = Object.entries(
     salesMonth
       .flatMap((s) => s.items)
@@ -74,9 +82,15 @@ export default async function DashboardPage() {
       <p className="mt-1 text-sm text-slate-500">Visão geral de vendas e estoque.</p>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <StatCard label="Hoje" value={formatPrice(totalHoje)} sub={`${salesToday.length} venda(s)`} />
-        <StatCard label="Este mês" value={formatPrice(totalMes)} sub={`${salesMonth.length} venda(s)`} />
-        <StatCard label="Total registrado" value={formatPrice(totalGeral)} sub={`${sales.length} venda(s) no total`} />
+        <StatCard label="Faturamento hoje" value={formatPrice(totalHoje)} sub={`${salesToday.length} venda(s)`} />
+        <StatCard label="Faturamento este mês" value={formatPrice(totalMes)} sub={`${salesMonth.length} venda(s)`} />
+        <StatCard label="Faturamento total" value={formatPrice(totalGeral)} sub={`${sales.length} venda(s) no total`} />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <StatCard label="Lucro hoje" value={formatPrice(lucroHoje)} sub={`Custo: ${formatPrice(custoHoje)}`} />
+        <StatCard label="Lucro este mês" value={formatPrice(lucroMes)} sub={`Custo: ${formatPrice(custoMes)}`} />
+        <StatCard label="Lucro total" value={formatPrice(lucroGeral)} sub={`Custo: ${formatPrice(custoGeral)}`} />
       </div>
 
       <LowStockAlert products={products} />

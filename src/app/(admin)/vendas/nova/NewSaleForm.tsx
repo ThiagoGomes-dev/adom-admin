@@ -12,6 +12,7 @@ interface CartLine {
   productId: string;
   name: string;
   unitPrice: number;
+  unitCost: number;
   quantity: number;
   maxStock: number;
 }
@@ -32,6 +33,7 @@ export function NewSaleForm({ products }: { products: Product[] }) {
   const [error, setError] = useState<string | null>(null);
 
   const total = cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+  const lucroEstimado = cart.reduce((sum, line) => sum + (line.unitPrice - line.unitCost) * line.quantity, 0);
 
   const addProduct = () => {
     if (!selectedProductId) return;
@@ -51,6 +53,7 @@ export function NewSaleForm({ products }: { products: Product[] }) {
           productId: product.id,
           name: product.name,
           unitPrice: product.promoPrice ?? product.price,
+          unitCost: product.costPrice,
           quantity: 1,
           maxStock: product.stockQuantity,
         },
@@ -197,9 +200,15 @@ export function NewSaleForm({ products }: { products: Product[] }) {
         </label>
       </section>
 
-      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5">
-        <span className="text-sm font-semibold text-slate-500">Total</span>
-        <span className="text-xl font-bold text-slate-900">{formatPrice(total)}</span>
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-slate-500">Total</span>
+          <span className="text-xl font-bold text-slate-900">{formatPrice(total)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-xs text-slate-400">Lucro estimado</span>
+          <span className="text-sm font-semibold text-emerald-600">{formatPrice(lucroEstimado)}</span>
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

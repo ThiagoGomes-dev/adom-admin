@@ -36,6 +36,7 @@ export function ProductForm({ categories, product }: ProductFormProps) {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categorySaving, setCategorySaving] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [costPrice, setCostPrice] = useState(String(product?.costPrice ?? ''));
   const [price, setPrice] = useState(String(product?.price ?? ''));
   const [promoPrice, setPromoPrice] = useState(product?.promoPrice ? String(product.promoPrice) : '');
   const [stockQuantity, setStockQuantity] = useState(String(product?.stockQuantity ?? 0));
@@ -182,6 +183,7 @@ export function ProductForm({ categories, product }: ProductFormProps) {
       name,
       description,
       shortDescription: shortDescription || undefined,
+      costPrice: Number(costPrice) || 0,
       price: Number(price) || 0,
       promoPrice: promoPrice ? Number(promoPrice) : undefined,
       images,
@@ -293,7 +295,19 @@ export function ProductForm({ categories, product }: ProductFormProps) {
       {/* Preço e estoque */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Preço e estoque</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="text-sm font-medium text-slate-700">Preço de custo (R$)</label>
+            <input
+              type="number"
+              step="0.01"
+              min={0}
+              value={costPrice}
+              onChange={(e) => setCostPrice(e.target.value)}
+              placeholder="quanto custou pra você"
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+            />
+          </div>
           <div>
             <label className="text-sm font-medium text-slate-700">Preço (R$)</label>
             <input
@@ -326,6 +340,17 @@ export function ProductForm({ categories, product }: ProductFormProps) {
             />
           </div>
         </div>
+        {Number(costPrice) > 0 && Number(price) > 0 && (
+          <p className="mt-3 text-xs text-slate-500">
+            Lucro por unidade:{' '}
+            <span className="font-semibold text-slate-700">
+              {((Number(promoPrice) || Number(price)) - Number(costPrice)).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
+            </span>
+          </p>
+        )}
         <div className="mt-4 flex gap-6">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />

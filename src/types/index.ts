@@ -24,6 +24,7 @@ export interface Product {
   name: string;
   description: string;
   shortDescription?: string;
+  costPrice: number;
   price: number;
   promoPrice?: number;
   images: string[];
@@ -51,12 +52,15 @@ export interface SaleItem {
   quantity: number;
   /** preço unitário no momento da venda */
   unitPrice: number;
+  /** custo unitário no momento da venda */
+  unitCost: number;
 }
 
 export interface Sale {
   id: string;
   items: SaleItem[];
   total: number;
+  totalCost: number;
   paymentMethod: PaymentMethod | null;
   note?: string;
   createdAt: string;

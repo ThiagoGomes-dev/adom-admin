@@ -16,6 +16,7 @@ create table if not exists products (
   name text not null,
   description text not null default '',
   short_description text,
+  cost_price numeric(10, 2) not null default 0,
   price numeric(10, 2) not null default 0,
   promo_price numeric(10, 2),
   images text[] not null default '{}',
@@ -43,6 +44,9 @@ create trigger products_set_updated_at
   before update on products
   for each row
   execute function set_updated_at();
+
+-- migração: adiciona preço de custo em bancos já existentes (sem efeito em bancos novos, já criado acima)
+alter table products add column if not exists cost_price numeric(10, 2) not null default 0;
 
 -- Row Level Security: leitura pública (para a API /api/products), escrita só autenticado
 alter table categories enable row level security;
@@ -97,14 +101,18 @@ create policy "Authenticated delete product images" on storage.objects for delet
 
 create table if not exists sales (
   id uuid primary key default gen_random_uuid(),
-  items jsonb not null default '[]', -- [{product_id, name, quantity, unit_price}]
+  items jsonb not null default '[]', -- [{product_id, name, quantity, unit_price, unit_cost}]
   total numeric(10, 2) not null default 0,
+  total_cost numeric(10, 2) not null default 0,
   payment_method text, -- 'pix' | 'credito' | 'dinheiro' | null
   note text,
   created_at timestamptz not null default now()
 );
 
 alter table sales enable row level security;
+
+-- migração: custo total da venda em bancos já existentes (sem efeito em bancos novos, já criado acima)
+alter table sales add column if not exists total_cost numeric(10, 2) not null default 0;
 
 -- vendas não são públicas: só quem está logado no admin lê/cria
 drop policy if exists "Authenticated manage sales" on sales;
@@ -124,8 +132,10 @@ declare
   v_product products%rowtype;
   v_quantity integer;
   v_unit_price numeric(10, 2);
+  v_unit_cost numeric(10, 2);
   v_snapshot jsonb := '[]'::jsonb;
   v_total numeric(10, 2) := 0;
+  v_total_cost numeric(10, 2) := 0;
   v_sale_id uuid;
 begin
   for v_item in select * from jsonb_array_elements(p_items) loop
@@ -141,6 +151,7 @@ begin
     end if;
 
     v_unit_price := coalesce(v_product.promo_price, v_product.price);
+    v_unit_cost := coalesce(v_product.cost_price, 0);
 
     update products
       set stock_quantity = stock_quantity - v_quantity,
@@ -151,13 +162,15 @@ begin
       'product_id', v_product.id,
       'name', v_product.name,
       'quantity', v_quantity,
-      'unit_price', v_unit_price
+      'unit_price', v_unit_price,
+      'unit_cost', v_unit_cost
     );
     v_total := v_total + v_unit_price * v_quantity;
+    v_total_cost := v_total_cost + v_unit_cost * v_quantity;
   end loop;
 
-  insert into sales (items, total, payment_method, note)
-  values (v_snapshot, v_total, p_payment_method, p_note)
+  insert into sales (items, total, total_cost, payment_method, note)
+  values (v_snapshot, v_total, v_total_cost, p_payment_method, p_note)
   returning id into v_sale_id;
 
   return v_sale_id;

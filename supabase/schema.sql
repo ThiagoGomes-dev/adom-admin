@@ -7,8 +7,12 @@ create table if not exists categories (
   name text not null,
   slug text not null unique,
   icon text,
+  image text,
   created_at timestamptz not null default now()
 );
+
+-- migração: adiciona imagem de capa da categoria em bancos já existentes (sem efeito em bancos novos, já criado acima)
+alter table categories add column if not exists image text;
 
 create table if not exists products (
   id uuid primary key default gen_random_uuid(),

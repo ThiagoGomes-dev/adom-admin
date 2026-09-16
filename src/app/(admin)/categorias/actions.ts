@@ -12,9 +12,16 @@ export async function listCategories(): Promise<Category[]> {
   return (data as CategoryRow[]).map(rowToCategory);
 }
 
-export async function createCategory(input: { name: string; slug: string; icon?: string }): Promise<{ error?: string }> {
+export async function createCategory(input: {
+  name: string;
+  slug: string;
+  icon?: string;
+  image?: string;
+}): Promise<{ error?: string }> {
   const supabase = await createClient();
-  const { error } = await supabase.from('categories').insert({ name: input.name, slug: input.slug, icon: input.icon || null });
+  const { error } = await supabase
+    .from('categories')
+    .insert({ name: input.name, slug: input.slug, icon: input.icon || null, image: input.image || null });
   if (error) return { error: error.message };
   revalidatePath('/categorias');
   return {};
@@ -22,12 +29,12 @@ export async function createCategory(input: { name: string; slug: string; icon?:
 
 export async function updateCategory(
   id: string,
-  input: { name: string; slug: string; icon?: string },
+  input: { name: string; slug: string; icon?: string; image?: string },
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
   const { error } = await supabase
     .from('categories')
-    .update({ name: input.name, slug: input.slug, icon: input.icon || null })
+    .update({ name: input.name, slug: input.slug, icon: input.icon || null, image: input.image || null })
     .eq('id', id);
   if (error) return { error: error.message };
   revalidatePath('/categorias');

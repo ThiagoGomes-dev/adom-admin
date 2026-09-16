@@ -24,6 +24,7 @@ export interface CategoryRow {
   name: string;
   slug: string;
   icon: string | null;
+  image: string | null;
 }
 
 export function rowToProduct(row: ProductRow): Product {
@@ -52,6 +53,7 @@ export function rowToCategory(row: CategoryRow): Category {
     name: row.name,
     slug: row.slug,
     icon: row.icon ?? undefined,
+    image: row.image ?? undefined,
   };
 }
 

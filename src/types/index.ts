@@ -41,6 +41,7 @@ export interface Category {
   name: string;
   slug: string;
   icon?: string;
+  image?: string;
 }
 
 export type PaymentMethod = 'pix' | 'credito' | 'dinheiro';

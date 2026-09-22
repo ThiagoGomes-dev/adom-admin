@@ -212,3 +212,70 @@ $$;
 
 revoke all on function delete_sale(uuid) from public;
 grant execute on function delete_sale(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Reposição de estoque (custo médio ponderado)
+-- ---------------------------------------------------------------------------
+
+-- Cada linha é uma "entrada" de mercadoria — permite no futuro montar um
+-- relatório de quanto foi gasto comprando estoque, por período/produto.
+create table if not exists stock_entries (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references products (id) on delete cascade,
+  quantity integer not null,
+  total_cost numeric(10, 2) not null,
+  unit_cost numeric(10, 2) not null, -- total_cost / quantity, guardado pronto pra não recalcular no relatório
+  note text,
+  created_at timestamptz not null default now()
+);
+
+alter table stock_entries enable row level security;
+
+drop policy if exists "Authenticated manage stock entries" on stock_entries;
+create policy "Authenticated manage stock entries" on stock_entries for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+-- Registra a chegada de mais unidades de um produto: soma ao estoque atual e
+-- recalcula o custo por unidade como média ponderada entre o que já tinha e
+-- a nova leva (mistura lotes com preços diferentes sem precisar rastrear
+-- cada lote separadamente — suficiente pra um estoque fungível tipo camiseta).
+create or replace function restock_product(p_product_id uuid, p_quantity integer, p_total_cost numeric, p_note text)
+returns void
+language plpgsql
+as $$
+declare
+  v_product products%rowtype;
+  v_new_stock integer;
+  v_new_cost numeric(10, 2);
+  v_unit_cost numeric(10, 2);
+begin
+  if p_quantity <= 0 then
+    raise exception 'Quantidade precisa ser maior que zero';
+  end if;
+  if p_total_cost < 0 then
+    raise exception 'Valor pago não pode ser negativo';
+  end if;
+
+  select * into v_product from products where id = p_product_id for update;
+  if not found then
+    raise exception 'Produto não encontrado';
+  end if;
+
+  v_unit_cost := p_total_cost / p_quantity;
+  v_new_stock := v_product.stock_quantity + p_quantity;
+  v_new_cost := (v_product.stock_quantity * v_product.cost_price + p_total_cost) / v_new_stock;
+
+  update products
+    set stock_quantity = v_new_stock,
+        cost_price = v_new_cost,
+        available = true
+    where id = p_product_id;
+
+  insert into stock_entries (product_id, quantity, total_cost, unit_cost, note)
+  values (p_product_id, p_quantity, p_total_cost, v_unit_cost, p_note);
+end;
+$$;
+
+revoke all on function restock_product(uuid, integer, numeric, text) from public;
+grant execute on function restock_product(uuid, integer, numeric, text) to authenticated;

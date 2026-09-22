@@ -66,3 +66,15 @@ export interface Sale {
   note?: string;
   createdAt: string;
 }
+
+/** Uma reposição de estoque — registrada ao repor um produto, guarda o custo daquela leva. */
+export interface StockEntry {
+  id: string;
+  productId: string;
+  quantity: number;
+  totalCost: number;
+  /** custo por unidade só desta leva (totalCost / quantity) */
+  unitCost: number;
+  note?: string;
+  createdAt: string;
+}

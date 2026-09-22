@@ -1,4 +1,4 @@
-import type { Category, PaymentMethod, Product, ProductVariantGroup, Sale } from '@/types';
+import type { Category, PaymentMethod, Product, ProductVariantGroup, Sale, StockEntry } from '@/types';
 
 /** Formato de uma linha da tabela `products` no Postgres (snake_case). */
 export interface ProductRow {
@@ -98,6 +98,28 @@ export function rowToSale(row: SaleRow): Sale {
     total: Number(row.total),
     totalCost: Number(row.total_cost ?? 0),
     paymentMethod: (row.payment_method as PaymentMethod) ?? null,
+    note: row.note ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+export interface StockEntryRow {
+  id: string;
+  product_id: string;
+  quantity: number;
+  total_cost: number;
+  unit_cost: number;
+  note: string | null;
+  created_at: string;
+}
+
+export function rowToStockEntry(row: StockEntryRow): StockEntry {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    quantity: row.quantity,
+    totalCost: Number(row.total_cost),
+    unitCost: Number(row.unit_cost),
     note: row.note ?? undefined,
     createdAt: row.created_at,
   };

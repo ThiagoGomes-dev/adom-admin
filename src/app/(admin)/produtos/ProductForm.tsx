@@ -36,7 +36,13 @@ export function ProductForm({ categories, product }: ProductFormProps) {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categorySaving, setCategorySaving] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
-  const [costPrice, setCostPrice] = useState(String(product?.costPrice ?? ''));
+  // Guardamos o custo TOTAL pago pelo lote (ex: R$ 10.000 por 200 camisetas),
+  // não o custo por peça — é assim que o lojista realmente compra. O custo
+  // por unidade (o que de fato é salvo em `cost_price` no banco, usado nas
+  // vendas e no dashboard) é derivado dividindo pelo estoque logo abaixo.
+  const [totalCost, setTotalCost] = useState(
+    product ? String(Number((product.costPrice * product.stockQuantity).toFixed(2))) : '',
+  );
   const [price, setPrice] = useState(String(product?.price ?? ''));
   const [promoPrice, setPromoPrice] = useState(product?.promoPrice ? String(product.promoPrice) : '');
   const [stockQuantity, setStockQuantity] = useState(String(product?.stockQuantity ?? 0));
@@ -178,12 +184,15 @@ export function ProductForm({ categories, product }: ProductFormProps) {
       return;
     }
 
+    const stock = Number(stockQuantity) || 0;
+    const unitCost = stock > 0 ? (Number(totalCost) || 0) / stock : 0;
+
     const input: ProductInput = {
       slug: slugify(slug),
       name,
       description,
       shortDescription: shortDescription || undefined,
-      costPrice: Number(costPrice) || 0,
+      costPrice: unitCost,
       price: Number(price) || 0,
       promoPrice: promoPrice ? Number(promoPrice) : undefined,
       images,
@@ -195,7 +204,7 @@ export function ProductForm({ categories, product }: ProductFormProps) {
         .split(',')
         .map((t) => t.trim())
         .filter(Boolean),
-      stockQuantity: Number(stockQuantity) || 0,
+      stockQuantity: stock,
     };
 
     setSaving(true);
@@ -297,14 +306,14 @@ export function ProductForm({ categories, product }: ProductFormProps) {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Preço e estoque</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label className="text-sm font-medium text-slate-700">Preço de custo (R$)</label>
+            <label className="text-sm font-medium text-slate-700">Custo total do lote (R$)</label>
             <input
               type="number"
               step="0.01"
               min={0}
-              value={costPrice}
-              onChange={(e) => setCostPrice(e.target.value)}
-              placeholder="quanto custou pra você"
+              value={totalCost}
+              onChange={(e) => setTotalCost(e.target.value)}
+              placeholder="quanto pagou no total por essa quantidade"
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
           </div>
@@ -340,15 +349,27 @@ export function ProductForm({ categories, product }: ProductFormProps) {
             />
           </div>
         </div>
-        {Number(costPrice) > 0 && Number(price) > 0 && (
+        {Number(totalCost) > 0 && Number(stockQuantity) > 0 && (
           <p className="mt-3 text-xs text-slate-500">
-            Lucro por unidade:{' '}
+            Custo por unidade:{' '}
             <span className="font-semibold text-slate-700">
-              {((Number(promoPrice) || Number(price)) - Number(costPrice)).toLocaleString('pt-BR', {
+              {(Number(totalCost) / Number(stockQuantity)).toLocaleString('pt-BR', {
                 style: 'currency',
                 currency: 'BRL',
               })}
             </span>
+            {Number(price) > 0 && (
+              <>
+                {' '}
+                · Lucro por unidade:{' '}
+                <span className="font-semibold text-slate-700">
+                  {(
+                    (Number(promoPrice) || Number(price)) -
+                    Number(totalCost) / Number(stockQuantity)
+                  ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </span>
+              </>
+            )}
           </p>
         )}
         <div className="mt-4 flex gap-6">

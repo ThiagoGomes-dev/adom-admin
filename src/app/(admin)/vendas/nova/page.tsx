@@ -1,8 +1,8 @@
-import { listProducts } from '../../produtos/actions';
+import { listAllProductVariantSkus, listProducts } from '../../produtos/actions';
 import { NewSaleForm } from './NewSaleForm';
 
 export default async function NovaVendaPage() {
-  const products = await listProducts();
+  const [products, skusByProduct] = await Promise.all([listProducts(), listAllProductVariantSkus()]);
 
   return (
     <div>
@@ -11,7 +11,7 @@ export default async function NovaVendaPage() {
         O pagamento já foi combinado com o cliente (WhatsApp, Pix, etc.) — aqui é só o registro pra baixar o estoque.
       </p>
       <div className="mt-6">
-        <NewSaleForm products={products} />
+        <NewSaleForm products={products} skusByProduct={skusByProduct} />
       </div>
     </div>
   );

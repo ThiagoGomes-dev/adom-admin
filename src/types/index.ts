@@ -48,6 +48,10 @@ export type PaymentMethod = 'pix' | 'credito' | 'dinheiro';
 
 export interface SaleItem {
   productId: string;
+  /** variação vendida (quando o produto tem SKUs) — ausente em vendas de produto sem variação ou de antes desta coluna existir */
+  skuId?: string;
+  /** rótulo da variação no momento da venda, ex: "Preta / P" (só exibição) */
+  variantLabel?: string;
   /** nome do produto no momento da venda (não muda se o produto for renomeado depois) */
   name: string;
   quantity: number;
@@ -71,10 +75,41 @@ export interface Sale {
 export interface StockEntry {
   id: string;
   productId: string;
+  /** variação que recebeu esta parte do lote — ausente em entradas de produto sem variação */
+  skuId?: string;
   quantity: number;
   totalCost: number;
   /** custo por unidade só desta leva (totalCost / quantity) */
   unitCost: number;
   note?: string;
   createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Estoque por variação (SKU = combinação de opções, ex: Cor=Preta + Tamanho=P)
+// ---------------------------------------------------------------------------
+
+/** Qual opção de cada grupo compõe uma combinação — snapshot guardado no SKU. */
+export interface VariantSkuComboEntry {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionLabel: string;
+}
+
+/**
+ * Uma combinação específica de variação de um produto (ex: Preta + P), com
+ * estoque e custo próprios. Gerado automaticamente a partir de `Product.variants`.
+ */
+export interface ProductVariantSku {
+  id: string;
+  productId: string;
+  combo: VariantSkuComboEntry[];
+  comboKey: string;
+  /** rótulo pronto pra exibição, ex: "Preta / P" */
+  label: string;
+  stockQuantity: number;
+  costPrice: number;
+  createdAt: string;
+  updatedAt: string;
 }

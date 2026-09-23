@@ -60,7 +60,9 @@ export function SalesTable({ initialSales }: { initialSales: Sale[] }) {
                 {new Date(sale.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
               </td>
               <td className="px-4 py-3 text-slate-900">
-                {sale.items.map((item) => `${item.quantity}x ${item.name}`).join(', ')}
+                {sale.items
+                  .map((item) => `${item.quantity}x ${item.name}${item.variantLabel ? ` (${item.variantLabel})` : ''}`)
+                  .join(', ')}
               </td>
               <td className="px-4 py-3 text-slate-600">
                 {sale.paymentMethod ? PAYMENT_LABELS[sale.paymentMethod] : '—'}

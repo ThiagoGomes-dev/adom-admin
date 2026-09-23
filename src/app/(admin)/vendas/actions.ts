@@ -13,7 +13,7 @@ export async function listSales(): Promise<Sale[]> {
 }
 
 export interface RegisterSaleInput {
-  items: { productId: string; quantity: number }[];
+  items: { productId: string; skuId?: string; quantity: number }[];
   paymentMethod?: PaymentMethod;
   note?: string;
 }
@@ -21,14 +21,15 @@ export interface RegisterSaleInput {
 /**
  * Registra uma venda com um ou mais produtos. Chama a função `register_sale`
  * no banco, que valida estoque e desconta tudo numa transação só — ou a venda
- * inteira é gravada, ou nada é alterado.
+ * inteira é gravada, ou nada é alterado. Itens com `skuId` descontam a
+ * variação específica; sem `skuId`, descontam o produto inteiro (como antes).
  */
 export async function registerSale(input: RegisterSaleInput): Promise<{ error?: string; id?: string }> {
   if (!input.items.length) return { error: 'Adicione ao menos um produto.' };
 
   const supabase = await createClient();
   const { data, error } = await supabase.rpc('register_sale', {
-    p_items: input.items.map((i) => ({ product_id: i.productId, quantity: i.quantity })),
+    p_items: input.items.map((i) => ({ product_id: i.productId, sku_id: i.skuId ?? null, quantity: i.quantity })),
     p_payment_method: input.paymentMethod ?? null,
     p_note: input.note || null,
   });

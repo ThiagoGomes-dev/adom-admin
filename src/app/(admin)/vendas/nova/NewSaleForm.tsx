@@ -1,16 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Minus, Plus, Trash2 } from 'lucide-react';
-import type { PaymentMethod, Product } from '@/types';
+import type { PaymentMethod, Product, ProductVariantSku } from '@/types';
 import { formatPrice } from '@/lib/currency';
 import { cn } from '@/lib/cn';
 import { registerSale } from '../actions';
 
 interface CartLine {
   productId: string;
+  skuId?: string;
   name: string;
+  variantLabel?: string;
   unitPrice: number;
   unitCost: number;
   quantity: number;
@@ -23,10 +25,17 @@ const PAYMENT_OPTIONS: { value: PaymentMethod; label: string }[] = [
   { value: 'dinheiro', label: 'Dinheiro' },
 ];
 
-export function NewSaleForm({ products }: { products: Product[] }) {
+export function NewSaleForm({
+  products,
+  skusByProduct,
+}: {
+  products: Product[];
+  skusByProduct: Record<string, ProductVariantSku[]>;
+}) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [selectedSkuId, setSelectedSkuId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -35,42 +44,59 @@ export function NewSaleForm({ products }: { products: Product[] }) {
   const total = cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
   const lucroEstimado = cart.reduce((sum, line) => sum + (line.unitPrice - line.unitCost) * line.quantity, 0);
 
+  const selectedProduct = products.find((p) => p.id === selectedProductId);
+  const selectedProductSkus = selectedProductId ? skusByProduct[selectedProductId] ?? [] : [];
+  const needsSkuChoice = selectedProductSkus.length > 0;
+  const availableSkus = selectedProductSkus.filter((sku) => sku.stockQuantity > 0);
+  const selectedSku = availableSkus.find((sku) => sku.id === selectedSkuId);
+
+  const canAdd = Boolean(selectedProduct) && (!needsSkuChoice || Boolean(selectedSku));
+
   const addProduct = () => {
-    if (!selectedProductId) return;
-    const product = products.find((p) => p.id === selectedProductId);
-    if (!product) return;
+    if (!selectedProduct || !canAdd) return;
+
+    const skuId = selectedSku?.id;
+    const unitCost = selectedSku ? selectedSku.costPrice : selectedProduct.costPrice;
+    const maxStock = selectedSku ? selectedSku.stockQuantity : selectedProduct.stockQuantity;
 
     setCart((prev) => {
-      const existing = prev.find((l) => l.productId === product.id);
+      const existing = prev.find((l) => l.productId === selectedProduct.id && l.skuId === skuId);
       if (existing) {
         return prev.map((l) =>
-          l.productId === product.id ? { ...l, quantity: Math.min(l.quantity + 1, l.maxStock) } : l,
+          l.productId === selectedProduct.id && l.skuId === skuId
+            ? { ...l, quantity: Math.min(l.quantity + 1, l.maxStock) }
+            : l,
         );
       }
       return [
         ...prev,
         {
-          productId: product.id,
-          name: product.name,
-          unitPrice: product.promoPrice ?? product.price,
-          unitCost: product.costPrice,
+          productId: selectedProduct.id,
+          skuId,
+          name: selectedProduct.name,
+          variantLabel: selectedSku?.label,
+          unitPrice: selectedProduct.promoPrice ?? selectedProduct.price,
+          unitCost,
           quantity: 1,
-          maxStock: product.stockQuantity,
+          maxStock,
         },
       ];
     });
     setSelectedProductId('');
+    setSelectedSkuId('');
   };
 
-  const changeQuantity = (productId: string, delta: number) => {
+  const lineKey = (line: CartLine) => `${line.productId}__${line.skuId ?? ''}`;
+
+  const changeQuantity = (key: string, delta: number) => {
     setCart((prev) =>
       prev.map((l) =>
-        l.productId === productId ? { ...l, quantity: Math.max(1, Math.min(l.quantity + delta, l.maxStock)) } : l,
+        lineKey(l) === key ? { ...l, quantity: Math.max(1, Math.min(l.quantity + delta, l.maxStock)) } : l,
       ),
     );
   };
 
-  const removeLine = (productId: string) => setCart((prev) => prev.filter((l) => l.productId !== productId));
+  const removeLine = (key: string) => setCart((prev) => prev.filter((l) => lineKey(l) !== key));
 
   const handleSubmit = async () => {
     setError(null);
@@ -81,7 +107,7 @@ export function NewSaleForm({ products }: { products: Product[] }) {
 
     setSaving(true);
     const result = await registerSale({
-      items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+      items: cart.map((l) => ({ productId: l.productId, skuId: l.skuId, quantity: l.quantity })),
       paymentMethod: paymentMethod ?? undefined,
       note: note || undefined,
     });
@@ -96,17 +122,20 @@ export function NewSaleForm({ products }: { products: Product[] }) {
     router.refresh();
   };
 
-  const availableProducts = products.filter((p) => p.stockQuantity > 0);
+  const availableProducts = useMemo(() => products.filter((p) => p.stockQuantity > 0), [products]);
 
   return (
     <div className="max-w-2xl space-y-6">
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Produtos</h2>
 
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <select
             value={selectedProductId}
-            onChange={(e) => setSelectedProductId(e.target.value)}
+            onChange={(e) => {
+              setSelectedProductId(e.target.value);
+              setSelectedSkuId('');
+            }}
             className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           >
             <option value="">Selecione um produto...</option>
@@ -116,27 +145,49 @@ export function NewSaleForm({ products }: { products: Product[] }) {
               </option>
             ))}
           </select>
+
+          {needsSkuChoice && (
+            <select
+              value={selectedSkuId}
+              onChange={(e) => setSelectedSkuId(e.target.value)}
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+            >
+              <option value="">Escolha a variação...</option>
+              {availableSkus.map((sku) => (
+                <option key={sku.id} value={sku.id}>
+                  {sku.label} ({sku.stockQuantity} em estoque)
+                </option>
+              ))}
+            </select>
+          )}
+
           <button
             type="button"
             onClick={addProduct}
-            disabled={!selectedProductId}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            disabled={!canAdd}
+            className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
           >
             Adicionar
           </button>
         </div>
+        {needsSkuChoice && availableSkus.length === 0 && selectedProductId && (
+          <p className="mt-2 text-xs text-red-600">Nenhuma variação deste produto tem estoque disponível.</p>
+        )}
 
         <div className="mt-4 space-y-2">
           {cart.map((line) => (
-            <div key={line.productId} className="flex items-center gap-3 rounded-lg border border-slate-100 p-3">
+            <div key={lineKey(line)} className="flex items-center gap-3 rounded-lg border border-slate-100 p-3">
               <div className="flex-1">
-                <p className="text-sm font-medium text-slate-900">{line.name}</p>
+                <p className="text-sm font-medium text-slate-900">
+                  {line.name}
+                  {line.variantLabel && <span className="font-normal text-slate-500"> — {line.variantLabel}</span>}
+                </p>
                 <p className="text-xs text-slate-500">{formatPrice(line.unitPrice)} cada</p>
               </div>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => changeQuantity(line.productId, -1)}
+                  onClick={() => changeQuantity(lineKey(line), -1)}
                   className="rounded-full border border-slate-200 p-1 text-slate-600 hover:bg-slate-50"
                 >
                   <Minus size={13} />
@@ -144,7 +195,7 @@ export function NewSaleForm({ products }: { products: Product[] }) {
                 <span className="w-6 text-center text-sm font-semibold text-slate-900">{line.quantity}</span>
                 <button
                   type="button"
-                  onClick={() => changeQuantity(line.productId, 1)}
+                  onClick={() => changeQuantity(lineKey(line), 1)}
                   disabled={line.quantity >= line.maxStock}
                   className="rounded-full border border-slate-200 p-1 text-slate-600 hover:bg-slate-50 disabled:opacity-30"
                 >
@@ -156,7 +207,7 @@ export function NewSaleForm({ products }: { products: Product[] }) {
               </span>
               <button
                 type="button"
-                onClick={() => removeLine(line.productId)}
+                onClick={() => removeLine(lineKey(line))}
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
               >
                 <Trash2 size={15} />

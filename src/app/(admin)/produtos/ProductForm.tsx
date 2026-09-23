@@ -16,12 +16,14 @@ import type { ProductInput } from '@/lib/mappers';
 interface ProductFormProps {
   categories: Category[];
   product?: Product;
+  /** true quando o produto já tem estoque distribuído em SKUs de variação — nesse caso, estoque/custo são gerenciados só pelo painel "Repor estoque por variação". */
+  hasVariantStock?: boolean;
 }
 
 let tempId = 0;
 const nextTempId = () => `tmp-${Date.now()}-${tempId++}`;
 
-export function ProductForm({ categories, product }: ProductFormProps) {
+export function ProductForm({ categories, product, hasVariantStock = false }: ProductFormProps) {
   const router = useRouter();
   const isEditing = Boolean(product);
 
@@ -184,6 +186,12 @@ export function ProductForm({ categories, product }: ProductFormProps) {
       return;
     }
 
+    const filteredVariants = variants.filter((g) => g.name.trim() && g.options.length > 0);
+    if (hasVariantStock && filteredVariants.length === 0) {
+      setError('Este produto tem estoque distribuído por variação — remova o estoque das variações (no painel "Repor estoque por variação") antes de apagar todos os grupos.');
+      return;
+    }
+
     const stock = Number(stockQuantity) || 0;
     const unitCost = stock > 0 ? (Number(totalCost) || 0) / stock : 0;
 
@@ -197,7 +205,7 @@ export function ProductForm({ categories, product }: ProductFormProps) {
       promoPrice: promoPrice ? Number(promoPrice) : undefined,
       images,
       category,
-      variants: variants.filter((g) => g.name.trim() && g.options.length > 0),
+      variants: filteredVariants,
       available,
       featured,
       tags: tags
@@ -304,6 +312,12 @@ export function ProductForm({ categories, product }: ProductFormProps) {
       {/* Preço e estoque */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Preço e estoque</h2>
+        {hasVariantStock && (
+          <p className="mt-1 text-xs text-slate-400">
+            Custo e estoque são gerenciados pelo painel &quot;Repor estoque por variação&quot; acima — os valores
+            abaixo são só um resumo.
+          </p>
+        )}
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label className="text-sm font-medium text-slate-700">Custo total do lote (R$)</label>
@@ -314,7 +328,8 @@ export function ProductForm({ categories, product }: ProductFormProps) {
               value={totalCost}
               onChange={(e) => setTotalCost(e.target.value)}
               placeholder="quanto pagou no total por essa quantidade"
-              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              disabled={hasVariantStock}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
             />
           </div>
           <div>
@@ -345,7 +360,8 @@ export function ProductForm({ categories, product }: ProductFormProps) {
               min={0}
               value={stockQuantity}
               onChange={(e) => setStockQuantity(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              disabled={hasVariantStock}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
             />
           </div>
         </div>

@@ -21,12 +21,6 @@ interface VariantStockAllocatorProps {
   onAllocationChange: (key: string, value: string) => void;
   note?: string;
   onNoteChange?: (value: string) => void;
-  /** exibe campos de Preço/Promo por variação (independentes de estoque/custo) */
-  showPricing?: boolean;
-  prices?: Record<string, string>;
-  onPriceChange?: (key: string, value: string) => void;
-  promoPrices?: Record<string, string>;
-  onPromoPriceChange?: (key: string, value: string) => void;
 }
 
 /**
@@ -46,11 +40,6 @@ export function VariantStockAllocator({
   onAllocationChange,
   note,
   onNoteChange,
-  showPricing = false,
-  prices = {},
-  onPriceChange,
-  promoPrices = {},
-  onPromoPriceChange,
 }: VariantStockAllocatorProps) {
   const totalQty = Number(totalQuantity) || 0;
   const totalCostNum = Number(totalCost) || 0;
@@ -120,28 +109,6 @@ export function VariantStockAllocator({
                     <span className="ml-1.5 text-xs text-slate-400">({row.currentStock} em estoque)</span>
                   )}
                 </span>
-                {showPricing && (
-                  <>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      value={prices[row.key] ?? ''}
-                      onChange={(e) => onPriceChange?.(row.key, e.target.value)}
-                      placeholder="Preço"
-                      className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      value={promoPrices[row.key] ?? ''}
-                      onChange={(e) => onPromoPriceChange?.(row.key, e.target.value)}
-                      placeholder="Promo"
-                      className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </>
-                )}
                 <input
                   type="number"
                   min={0}

@@ -13,7 +13,6 @@ import { cartesianCombos, comboKeyOf, comboLabelOf } from '@/lib/variantCombos';
 import { createProduct, updateProduct, listProductVariantSkus, restockProductVariants, setVariantSkuPricing } from './actions';
 import { createCategory } from '../categorias/actions';
 import { VariantStockAllocator, allocatorCanSubmit, type VariantStockAllocatorRow } from './VariantStockAllocator';
-import { formatPrice } from '@/lib/currency';
 import type { ProductInput } from '@/lib/mappers';
 
 interface ProductFormProps {
@@ -96,7 +95,24 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
     () => cartesianCombos(filteredVariants).map((combo) => ({ key: comboKeyOf(combo), label: comboLabelOf(combo) })),
     [filteredVariants],
   );
-  const isCreatingWithVariants = !isEditing && filteredVariants.length > 0;
+  const hasVariants = filteredVariants.length > 0;
+  const isCreatingWithVariants = !isEditing && hasVariants;
+
+  // Linhas/valores de preço por variação — em edição usam o sku.id real; ao
+  // cadastrar (produto ainda não existe) usam o comboKey do rascunho.
+  const variantPriceRows: { key: string; label: string }[] = isEditing
+    ? skus.map((s) => ({ key: s.id, label: s.label }))
+    : draftAllocatorRows;
+  const variantPrices = isEditing ? skuPrices : initialPrices;
+  const variantPromoPrices = isEditing ? skuPromoPrices : initialPromoPrices;
+  const setVariantPrice = (key: string, value: string) => {
+    if (isEditing) setSkuPrices((prev) => ({ ...prev, [key]: value }));
+    else setInitialPrices((prev) => ({ ...prev, [key]: value }));
+  };
+  const setVariantPromoPrice = (key: string, value: string) => {
+    if (isEditing) setSkuPromoPrices((prev) => ({ ...prev, [key]: value }));
+    else setInitialPromoPrices((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleNameChange = (value: string) => {
     setName(value);
@@ -237,8 +253,26 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
       return;
     }
 
+    if (hasVariants && pricePerVariant) {
+      const missingPrice =
+        variantPriceRows.length === 0 || variantPriceRows.some((row) => !(variantPrices[row.key] ?? '').trim());
+      if (missingPrice) {
+        setError('Preencha o preço de todas as variações, ou selecione "Preço único".');
+        return;
+      }
+    }
+
     const stock = isCreatingWithVariants ? 0 : Number(stockQuantity) || 0;
     const unitCost = isCreatingWithVariants ? 0 : stock > 0 ? (Number(totalCost) || 0) / stock : 0;
+
+    // Com preço por variação, o preço "do produto" nunca é mostrado nem
+    // editado diretamente — vira só o menor preço entre as variações, usado
+    // como referência em listas (ex: card do produto) que ainda não sabem
+    // qual variação o cliente vai escolher.
+    const resolvedPrice = hasVariants && pricePerVariant
+      ? Math.min(...variantPriceRows.map((row) => Number(variantPrices[row.key]) || 0).filter((n) => n > 0))
+      : Number(price) || 0;
+    const resolvedPromoPrice = hasVariants && pricePerVariant ? undefined : promoPrice ? Number(promoPrice) : undefined;
 
     const input: ProductInput = {
       slug: slugify(slug),
@@ -246,8 +280,8 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
       description,
       shortDescription: shortDescription || undefined,
       costPrice: unitCost,
-      price: Number(price) || 0,
-      promoPrice: promoPrice ? Number(promoPrice) : undefined,
+      price: resolvedPrice,
+      promoPrice: resolvedPromoPrice,
       images,
       category,
       variants: filteredVariants,
@@ -420,73 +454,105 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
         </div>
       </section>
 
-      {/* Preço e estoque */}
+      {/* Preço (e estoque, quando o produto não tem variantes) */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Preço e estoque</h2>
-        {hasVariantStock && (
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{hasVariants ? 'Preço' : 'Preço e estoque'}</h2>
+        {hasVariants && (
           <p className="mt-1 text-xs text-slate-400">
-            Custo e estoque são gerenciados pelo painel &quot;Repor estoque por variação&quot; acima — os valores
-            abaixo são só um resumo.
+            Estoque e custo são geridos {isCreatingWithVariants ? 'na seção "Estoque inicial por variação" abaixo' : 'pelo painel "Repor estoque por variação" acima'} — aqui é só o preço.
           </p>
         )}
-        {isCreatingWithVariants && (
-          <p className="mt-1 text-xs text-slate-400">
-            Preço/promo abaixo são o padrão do produto (usados quando a variação não tem preço próprio). O estoque
-            inicial é distribuído por variação na seção abaixo.
-          </p>
+
+        {hasVariants && (
+          <div className="mt-3 flex gap-4">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                checked={!pricePerVariant}
+                onChange={() => setPricePerVariant(false)}
+                className="h-4 w-4 border-slate-300"
+              />
+              Preço único
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                checked={pricePerVariant}
+                onChange={() => setPricePerVariant(true)}
+                className="h-4 w-4 border-slate-300"
+              />
+              Preço por variação
+            </label>
+          </div>
         )}
-        <div className={`mt-4 grid gap-4 sm:grid-cols-2 ${isCreatingWithVariants ? '' : 'lg:grid-cols-4'}`}>
-          {!isCreatingWithVariants && (
+
+        {(!hasVariants || !pricePerVariant) && (
+          <div className={`mt-4 grid gap-4 sm:grid-cols-2 ${hasVariants ? '' : 'lg:grid-cols-4'}`}>
+            {!hasVariants && (
+              <div>
+                <label className="text-sm font-medium text-slate-700">Custo total do lote (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={totalCost}
+                  onChange={(e) => setTotalCost(e.target.value)}
+                  placeholder="quanto pagou no total por essa quantidade"
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
+            )}
             <div>
-              <label className="text-sm font-medium text-slate-700">Custo total do lote (R$)</label>
+              <label className="text-sm font-medium text-slate-700">Preço (R$)</label>
               <input
                 type="number"
                 step="0.01"
-                min={0}
-                value={totalCost}
-                onChange={(e) => setTotalCost(e.target.value)}
-                placeholder="quanto pagou no total por essa quantidade"
-                disabled={hasVariantStock}
-                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
               />
             </div>
-          )}
-          <div>
-            <label className="text-sm font-medium text-slate-700">Preço (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-slate-700">Preço promocional</label>
-            <input
-              type="number"
-              step="0.01"
-              value={promoPrice}
-              onChange={(e) => setPromoPrice(e.target.value)}
-              placeholder="opcional"
-              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-            />
-          </div>
-          {!isCreatingWithVariants && (
             <div>
-              <label className="text-sm font-medium text-slate-700">Estoque</label>
+              <label className="text-sm font-medium text-slate-700">Preço promocional</label>
               <input
                 type="number"
-                min={0}
-                value={stockQuantity}
-                onChange={(e) => setStockQuantity(e.target.value)}
-                disabled={hasVariantStock}
-                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                step="0.01"
+                value={promoPrice}
+                onChange={(e) => setPromoPrice(e.target.value)}
+                placeholder="opcional"
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
               />
             </div>
-          )}
-        </div>
-        {!isCreatingWithVariants && Number(totalCost) > 0 && Number(stockQuantity) > 0 && (
+            {!hasVariants && (
+              <div>
+                <label className="text-sm font-medium text-slate-700">Estoque</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={stockQuantity}
+                  onChange={(e) => setStockQuantity(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {hasVariants && pricePerVariant && (
+          variantPriceRows.length > 0 ? (
+            <VariantPriceRows
+              rows={variantPriceRows}
+              prices={variantPrices}
+              onPriceChange={setVariantPrice}
+              promoPrices={variantPromoPrices}
+              onPromoPriceChange={setVariantPromoPrice}
+            />
+          ) : (
+            <p className="mt-3 text-xs text-slate-400">Salve o produto com as variações primeiro para poder definir o preço de cada uma.</p>
+          )
+        )}
+
+        {!hasVariants && Number(totalCost) > 0 && Number(stockQuantity) > 0 && (
           <p className="mt-3 text-xs text-slate-500">
             Custo por unidade:{' '}
             <span className="font-semibold text-slate-700">
@@ -529,15 +595,6 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
             Informe o valor total do lote e distribua a quantidade entre cor/tamanho — a soma precisa bater com o
             total.
           </p>
-          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={pricePerVariant}
-              onChange={(e) => setPricePerVariant(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300"
-            />
-            Preço varia por variação
-          </label>
           <div className="mt-4">
             <VariantStockAllocator
               rows={draftAllocatorRows}
@@ -547,62 +604,8 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
               onTotalCostChange={setInitialTotalCost}
               allocations={initialAllocations}
               onAllocationChange={(key, value) => setInitialAllocations((prev) => ({ ...prev, [key]: value }))}
-              showPricing={pricePerVariant}
-              prices={initialPrices}
-              onPriceChange={(key, value) => setInitialPrices((prev) => ({ ...prev, [key]: value }))}
-              promoPrices={initialPromoPrices}
-              onPromoPriceChange={(key, value) => setInitialPromoPrices((prev) => ({ ...prev, [key]: value }))}
             />
           </div>
-        </section>
-      )}
-
-      {/* Preço por variação — edição: independente do estoque (esse já é gerido pelo painel "Repor estoque" acima) */}
-      {isEditing && filteredVariants.length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Preço por variação</h2>
-          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={pricePerVariant}
-              onChange={(e) => setPricePerVariant(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300"
-            />
-            Preço varia por variação
-          </label>
-          {pricePerVariant && skus.length > 0 && (
-            <div className="mt-3 space-y-2">
-              {skus.map((sku) => (
-                <div key={sku.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-100 p-2.5">
-                  <span className="flex-1 text-sm text-slate-700">
-                    {sku.label}
-                    <span className="ml-1.5 text-xs text-slate-400">(padrão: {formatPrice(Number(price) || 0)})</span>
-                  </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={skuPrices[sku.id] ?? ''}
-                    onChange={(e) => setSkuPrices((prev) => ({ ...prev, [sku.id]: e.target.value }))}
-                    placeholder="Preço"
-                    className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={skuPromoPrices[sku.id] ?? ''}
-                    onChange={(e) => setSkuPromoPrices((prev) => ({ ...prev, [sku.id]: e.target.value }))}
-                    placeholder="Promo"
-                    className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-          {pricePerVariant && skus.length === 0 && (
-            <p className="mt-2 text-xs text-slate-400">Salve o produto com as variações primeiro para poder definir o preço de cada uma.</p>
-          )}
         </section>
       )}
 
@@ -823,6 +826,49 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Linhas de Preço/Promo por variação — usada tanto ao cadastrar (chave = comboKey) quanto ao editar (chave = sku.id). */
+function VariantPriceRows({
+  rows,
+  prices,
+  onPriceChange,
+  promoPrices,
+  onPromoPriceChange,
+}: {
+  rows: { key: string; label: string }[];
+  prices: Record<string, string>;
+  onPriceChange: (key: string, value: string) => void;
+  promoPrices: Record<string, string>;
+  onPromoPriceChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div className="mt-3 space-y-2">
+      {rows.map((row) => (
+        <div key={row.key} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-100 p-2.5">
+          <span className="flex-1 text-sm text-slate-700">{row.label}</span>
+          <input
+            type="number"
+            step="0.01"
+            min={0}
+            value={prices[row.key] ?? ''}
+            onChange={(e) => onPriceChange(row.key, e.target.value)}
+            placeholder="Preço"
+            className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+          />
+          <input
+            type="number"
+            step="0.01"
+            min={0}
+            value={promoPrices[row.key] ?? ''}
+            onChange={(e) => onPromoPriceChange(row.key, e.target.value)}
+            placeholder="Promo"
+            className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+          />
+        </div>
+      ))}
     </div>
   );
 }

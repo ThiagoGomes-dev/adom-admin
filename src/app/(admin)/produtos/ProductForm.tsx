@@ -455,163 +455,6 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
         </div>
       </section>
 
-      {/* Preço (e estoque, quando o produto não tem variantes) */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{hasVariants ? 'Preço' : 'Preço e estoque'}</h2>
-        {hasVariants && (
-          <p className="mt-1 text-xs text-slate-400">
-            Estoque e custo são geridos {isCreatingWithVariants ? 'na seção "Estoque inicial por variação" abaixo' : 'pelo painel "Repor estoque por variação" acima'} — aqui é só o preço.
-          </p>
-        )}
-
-        {hasVariants && (
-          <div className="mt-3 flex gap-4">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="radio"
-                checked={!pricePerVariant}
-                onChange={() => setPricePerVariant(false)}
-                className="h-4 w-4 border-slate-300"
-              />
-              Preço único
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="radio"
-                checked={pricePerVariant}
-                onChange={() => setPricePerVariant(true)}
-                className="h-4 w-4 border-slate-300"
-              />
-              Preço por variação
-            </label>
-          </div>
-        )}
-
-        {(!hasVariants || !pricePerVariant) && (
-          <div className={`mt-4 grid gap-4 sm:grid-cols-2 ${hasVariants ? '' : 'lg:grid-cols-4'}`}>
-            {!hasVariants && (
-              <div>
-                <label className="text-sm font-medium text-slate-700">Custo total do lote (R$)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={totalCost}
-                  onChange={(e) => setTotalCost(e.target.value)}
-                  placeholder="quanto pagou no total por essa quantidade"
-                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                />
-              </div>
-            )}
-            <div>
-              <label className="text-sm font-medium text-slate-700">Preço (R$)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Preço promocional</label>
-              <input
-                type="number"
-                step="0.01"
-                value={promoPrice}
-                onChange={(e) => setPromoPrice(e.target.value)}
-                placeholder="opcional"
-                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-              />
-            </div>
-            {!hasVariants && (
-              <div>
-                <label className="text-sm font-medium text-slate-700">Estoque</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={stockQuantity}
-                  onChange={(e) => setStockQuantity(e.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {hasVariants && pricePerVariant && (
-          variantPriceRows.length > 0 ? (
-            <VariantPriceRows
-              rows={variantPriceRows}
-              prices={variantPrices}
-              onPriceChange={setVariantPrice}
-              promoPrices={variantPromoPrices}
-              onPromoPriceChange={setVariantPromoPrice}
-            />
-          ) : (
-            <p className="mt-3 text-xs text-slate-400">Salve o produto com as variações primeiro para poder definir o preço de cada uma.</p>
-          )
-        )}
-
-        {!hasVariants && Number(totalCost) > 0 && Number(stockQuantity) > 0 && (
-          <p className="mt-3 text-xs text-slate-500">
-            Custo por unidade:{' '}
-            <span className="font-semibold text-slate-700">
-              {(Number(totalCost) / Number(stockQuantity)).toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
-            </span>
-            {Number(price) > 0 && (
-              <>
-                {' '}
-                · Lucro por unidade:{' '}
-                <span className="font-semibold text-slate-700">
-                  {(
-                    (Number(promoPrice) || Number(price)) -
-                    Number(totalCost) / Number(stockQuantity)
-                  ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
-              </>
-            )}
-          </p>
-        )}
-        <div className="mt-4 flex gap-6">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
-            Produto em destaque
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={available} onChange={(e) => setAvailable(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
-            Visível no site
-          </label>
-        </div>
-      </section>
-
-      {/* Estoque inicial por variação — só ao cadastrar um produto novo com variantes; mesma mecânica do "Repor estoque" */}
-      {isCreatingWithVariants && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Estoque inicial por variação</h2>
-          <p className="mt-1 text-xs text-slate-400">
-            Informe o valor total do lote e distribua a quantidade entre cor/tamanho — a soma precisa bater com o
-            total.
-          </p>
-          <div className="mt-4">
-            <VariantStockAllocator
-              rows={draftAllocatorRows}
-              totalQuantity={initialTotalQuantity}
-              onTotalQuantityChange={setInitialTotalQuantity}
-              totalCost={initialTotalCost}
-              onTotalCostChange={setInitialTotalCost}
-              allocations={initialAllocations}
-              onAllocationChange={(key, value) => setInitialAllocations((prev) => ({ ...prev, [key]: value }))}
-              note={initialNote}
-              onNoteChange={setInitialNote}
-            />
-          </div>
-        </section>
-      )}
-
       {/* Imagens */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Fotos</h2>
@@ -769,6 +612,163 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
           {variants.length === 0 && <p className="text-sm text-slate-500">Nenhum grupo de variante — o produto não terá seleção de cor/tamanho.</p>}
         </div>
       </section>
+
+      {/* Preço (e estoque, quando o produto não tem variantes) — depois de Variantes, porque preço/estoque por variação depende delas */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{hasVariants ? 'Preço' : 'Preço e estoque'}</h2>
+        {hasVariants && (
+          <p className="mt-1 text-xs text-slate-400">
+            Estoque e custo são geridos {isCreatingWithVariants ? 'na seção "Estoque inicial por variação" abaixo' : 'pelo painel "Repor estoque por variação" acima'} — aqui é só o preço.
+          </p>
+        )}
+
+        {hasVariants && (
+          <div className="mt-3 flex gap-4">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                checked={!pricePerVariant}
+                onChange={() => setPricePerVariant(false)}
+                className="h-4 w-4 border-slate-300"
+              />
+              Preço único
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                checked={pricePerVariant}
+                onChange={() => setPricePerVariant(true)}
+                className="h-4 w-4 border-slate-300"
+              />
+              Preço por variação
+            </label>
+          </div>
+        )}
+
+        {(!hasVariants || !pricePerVariant) && (
+          <div className={`mt-4 grid gap-4 sm:grid-cols-2 ${hasVariants ? '' : 'lg:grid-cols-4'}`}>
+            {!hasVariants && (
+              <div>
+                <label className="text-sm font-medium text-slate-700">Custo total do lote (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={totalCost}
+                  onChange={(e) => setTotalCost(e.target.value)}
+                  placeholder="quanto pagou no total por essa quantidade"
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
+            )}
+            <div>
+              <label className="text-sm font-medium text-slate-700">Preço (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700">Preço promocional</label>
+              <input
+                type="number"
+                step="0.01"
+                value={promoPrice}
+                onChange={(e) => setPromoPrice(e.target.value)}
+                placeholder="opcional"
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
+            {!hasVariants && (
+              <div>
+                <label className="text-sm font-medium text-slate-700">Estoque</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={stockQuantity}
+                  onChange={(e) => setStockQuantity(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {hasVariants && pricePerVariant && (
+          variantPriceRows.length > 0 ? (
+            <VariantPriceRows
+              rows={variantPriceRows}
+              prices={variantPrices}
+              onPriceChange={setVariantPrice}
+              promoPrices={variantPromoPrices}
+              onPromoPriceChange={setVariantPromoPrice}
+            />
+          ) : (
+            <p className="mt-3 text-xs text-slate-400">Defina ao menos um grupo de variante acima para poder definir o preço de cada combinação.</p>
+          )
+        )}
+
+        {!hasVariants && Number(totalCost) > 0 && Number(stockQuantity) > 0 && (
+          <p className="mt-3 text-xs text-slate-500">
+            Custo por unidade:{' '}
+            <span className="font-semibold text-slate-700">
+              {(Number(totalCost) / Number(stockQuantity)).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
+            </span>
+            {Number(price) > 0 && (
+              <>
+                {' '}
+                · Lucro por unidade:{' '}
+                <span className="font-semibold text-slate-700">
+                  {(
+                    (Number(promoPrice) || Number(price)) -
+                    Number(totalCost) / Number(stockQuantity)
+                  ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </span>
+              </>
+            )}
+          </p>
+        )}
+        <div className="mt-4 flex gap-6">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+            Produto em destaque
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={available} onChange={(e) => setAvailable(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+            Visível no site
+          </label>
+        </div>
+      </section>
+
+      {/* Estoque inicial por variação — só ao cadastrar um produto novo com variantes; mesma mecânica do "Repor estoque" */}
+      {isCreatingWithVariants && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Estoque inicial por variação</h2>
+          <p className="mt-1 text-xs text-slate-400">
+            Informe o valor total do lote e distribua a quantidade entre cor/tamanho — a soma precisa bater com o
+            total.
+          </p>
+          <div className="mt-4">
+            <VariantStockAllocator
+              rows={draftAllocatorRows}
+              totalQuantity={initialTotalQuantity}
+              onTotalQuantityChange={setInitialTotalQuantity}
+              totalCost={initialTotalCost}
+              onTotalCostChange={setInitialTotalCost}
+              allocations={initialAllocations}
+              onAllocationChange={(key, value) => setInitialAllocations((prev) => ({ ...prev, [key]: value }))}
+              note={initialNote}
+              onNoteChange={setInitialNote}
+            />
+          </div>
+        </section>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

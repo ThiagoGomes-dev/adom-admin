@@ -13,29 +13,8 @@ import {
   type StockEntryRow,
 } from '@/lib/mappers';
 import { extractStoragePath } from '@/lib/storagePath';
-import type { Product, ProductVariantGroup, ProductVariantSku, StockEntry, VariantSkuComboEntry } from '@/types';
-
-/** Todas as combinações possíveis dos grupos de variação (produto cartesiano). */
-function cartesianCombos(variants: ProductVariantGroup[]): VariantSkuComboEntry[][] {
-  return variants.reduce<VariantSkuComboEntry[][]>(
-    (acc, group) =>
-      acc.flatMap((combo) =>
-        group.options.map((option) => [
-          ...combo,
-          { groupId: group.id, groupName: group.name, optionId: option.id, optionLabel: option.label },
-        ]),
-      ),
-    [[]],
-  );
-}
-
-/** Chave estável e independente da ordem dos grupos, pra identificar a mesma combinação. */
-function comboKeyOf(combo: VariantSkuComboEntry[]): string {
-  return combo
-    .map((c) => `${c.groupId}:${c.optionId}`)
-    .sort()
-    .join('|');
-}
+import { cartesianCombos, comboKeyOf } from '@/lib/variantCombos';
+import type { Product, ProductVariantGroup, ProductVariantSku, StockEntry } from '@/types';
 
 export async function listProducts(): Promise<Product[]> {
   const supabase = await createClient();
@@ -51,13 +30,13 @@ export async function getProduct(id: string): Promise<Product | null> {
   return data ? rowToProduct(data as ProductRow) : null;
 }
 
-export async function createProduct(input: ProductInput): Promise<{ error?: string }> {
+export async function createProduct(input: ProductInput): Promise<{ id?: string; error?: string }> {
   const supabase = await createClient();
-  const { error } = await supabase.from('products').insert(productInputToRow(input));
+  const { data, error } = await supabase.from('products').insert(productInputToRow(input)).select('id').single();
   if (error) return { error: error.message };
   revalidatePath('/produtos');
   revalidatePath('/dashboard');
-  return {};
+  return { id: data.id as string };
 }
 
 export async function updateProduct(id: string, input: ProductInput): Promise<{ error?: string }> {
@@ -237,6 +216,35 @@ export async function restockProductVariants(input: RestockVariantsInput): Promi
   revalidatePath('/produtos');
   revalidatePath(`/produtos/${input.productId}`);
   revalidatePath('/dashboard');
+  return {};
+}
+
+export interface VariantSkuPricingEntry {
+  skuId: string;
+  /** undefined/null = remove o preço específico e volta a herdar o do produto */
+  price?: number;
+  promoPrice?: number;
+}
+
+/**
+ * Define o preço de venda específico de cada variação (independente do
+ * estoque/custo, que são geridos pelo fluxo de reposição). Um update direto
+ * por SKU é suficiente aqui — ao contrário do estoque, não há necessidade de
+ * reconciliar quantidades numa transação só.
+ */
+export async function setVariantSkuPricing(entries: VariantSkuPricingEntry[]): Promise<{ error?: string }> {
+  if (entries.length === 0) return {};
+
+  const supabase = await createClient();
+  for (const entry of entries) {
+    const { error } = await supabase
+      .from('product_variant_skus')
+      .update({ price: entry.price ?? null, promo_price: entry.promoPrice ?? null })
+      .eq('id', entry.skuId);
+    if (error) return { error: error.message };
+  }
+
+  revalidatePath('/produtos');
   return {};
 }
 

@@ -32,6 +32,7 @@ export default async function EditarProdutoPage({ params }: { params: Promise<{ 
           categories={categories}
           product={product}
           hasVariantStock={Boolean(variantSkus?.skus.some((sku) => sku.stockQuantity > 0))}
+          skus={variantSkus?.skus}
         />
       </div>
     </div>

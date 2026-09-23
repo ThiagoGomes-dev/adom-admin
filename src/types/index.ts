@@ -110,6 +110,9 @@ export interface ProductVariantSku {
   label: string;
   stockQuantity: number;
   costPrice: number;
+  /** preço de venda específico desta variação — ausente/nulo = herda price/promoPrice do produto */
+  price?: number;
+  promoPrice?: number;
   createdAt: string;
   updatedAt: string;
 }

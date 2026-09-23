@@ -118,10 +118,18 @@ create table if not exists product_variant_skus (
   combo_key text not null,
   stock_quantity integer not null default 0,
   cost_price numeric(10, 2) not null default 0,
+  -- preço de venda específico desta variação — nulo = herda price/promo_price
+  -- do produto (a maioria dos produtos nunca preenche isso)
+  price numeric(10, 2),
+  promo_price numeric(10, 2),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (product_id, combo_key)
 );
+
+-- migração: preço por variação em bancos já existentes (sem efeito em bancos novos, já criado acima)
+alter table product_variant_skus add column if not exists price numeric(10, 2);
+alter table product_variant_skus add column if not exists promo_price numeric(10, 2);
 
 alter table product_variant_skus enable row level security;
 
@@ -231,8 +239,6 @@ begin
       raise exception 'Produto não encontrado';
     end if;
 
-    v_unit_price := coalesce(v_product.promo_price, v_product.price);
-
     if v_sku_id is not null then
       select * into v_sku from product_variant_skus where id = v_sku_id and product_id = v_product.id for update;
       if not found then
@@ -243,6 +249,7 @@ begin
         raise exception 'Estoque insuficiente para "%": disponível %, pedido %', v_product.name, v_sku.stock_quantity, v_quantity;
       end if;
 
+      v_unit_price := coalesce(v_sku.promo_price, v_sku.price, v_product.promo_price, v_product.price);
       v_unit_cost := coalesce(v_sku.cost_price, 0);
 
       select string_agg(elem->>'optionLabel', ' / ' order by elem->>'groupName')
@@ -255,6 +262,7 @@ begin
         raise exception 'Estoque insuficiente para "%": disponível %, pedido %', v_product.name, v_product.stock_quantity, v_quantity;
       end if;
 
+      v_unit_price := coalesce(v_product.promo_price, v_product.price);
       v_unit_cost := coalesce(v_product.cost_price, 0);
 
       update products

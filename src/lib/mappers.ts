@@ -154,6 +154,8 @@ export interface ProductVariantSkuRow {
   combo_key: string;
   stock_quantity: number;
   cost_price: number;
+  price: number | null;
+  promo_price: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -171,6 +173,8 @@ export function rowToProductVariantSku(row: ProductVariantSkuRow): ProductVarian
     label: comboLabel(row.combo ?? []),
     stockQuantity: row.stock_quantity,
     costPrice: Number(row.cost_price ?? 0),
+    price: row.price != null ? Number(row.price) : undefined,
+    promoPrice: row.promo_price != null ? Number(row.promo_price) : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -187,7 +191,11 @@ export function rowToProductVariantSku(row: ProductVariantSkuRow): ProductVarian
 export function attachVariantStock<T extends { id: string }>(
   products: T[],
   skuRows: ProductVariantSkuRow[],
-): Array<T & { variantStock?: { selection: Record<string, string>; stockQuantity: number }[] }> {
+): Array<
+  T & {
+    variantStock?: { selection: Record<string, string>; stockQuantity: number; price?: number; promoPrice?: number }[];
+  }
+> {
   const byProduct = new Map<string, ProductVariantSkuRow[]>();
   for (const row of skuRows) {
     const list = byProduct.get(row.product_id) ?? [];
@@ -202,6 +210,8 @@ export function attachVariantStock<T extends { id: string }>(
     const variantStock = rows.map((row) => ({
       selection: Object.fromEntries((row.combo ?? []).map((c) => [c.groupName, c.optionLabel])),
       stockQuantity: row.stock_quantity,
+      ...(row.price != null ? { price: Number(row.price) } : {}),
+      ...(row.promo_price != null ? { promoPrice: Number(row.promo_price) } : {}),
     }));
 
     return { ...product, variantStock };

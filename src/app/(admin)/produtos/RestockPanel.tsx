@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Product, ProductVariantSku, StockEntry } from '@/types';
 import { formatPrice } from '@/lib/currency';
 import { restockProduct, restockProductVariants } from './actions';
+import { VariantStockAllocator, allocatorCanSubmit, type VariantStockAllocatorRow } from './VariantStockAllocator';
 
 interface RestockPanelProps {
   product: Product;
@@ -176,14 +177,12 @@ function VariantRestockPanel({
 
   const totalQty = Number(totalQuantity) || 0;
   const totalCostNum = Number(totalCost) || 0;
-  const unitCost = totalQty > 0 && totalCostNum > 0 ? totalCostNum / totalQty : 0;
-
-  const allocatedSum = useMemo(
-    () => skus.reduce((sum, sku) => sum + (Number(allocations[sku.id]) || 0), 0),
-    [skus, allocations],
-  );
-  const remaining = totalQty - allocatedSum;
-  const canSubmit = totalQty > 0 && totalCostNum > 0 && allocatedSum > 0 && remaining === 0;
+  const allocatorRows: VariantStockAllocatorRow[] = skus.map((sku) => ({
+    key: sku.id,
+    label: sku.label,
+    currentStock: sku.stockQuantity,
+  }));
+  const canSubmit = allocatorCanSubmit(allocatorRows, totalQuantity, totalCost, allocations);
 
   const setAllocation = (skuId: string, value: string) => {
     setAllocations((prev) => ({ ...prev, [skuId]: value }));
@@ -199,6 +198,8 @@ function VariantRestockPanel({
       setError('Informe o valor total pago pelo lote.');
       return;
     }
+    const allocatedSum = skus.reduce((sum, sku) => sum + (Number(allocations[sku.id]) || 0), 0);
+    const remaining = totalQty - allocatedSum;
     if (remaining !== 0) {
       setError(`A soma das variações precisa bater com o total do lote (faltam ${remaining} unid.).`);
       return;
@@ -268,72 +269,17 @@ function VariantRestockPanel({
         </div>
       )}
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
-        <div>
-          <label className="text-sm font-medium text-slate-700">Quantidade total do lote</label>
-          <input
-            type="number"
-            min={1}
-            value={totalQuantity}
-            onChange={(e) => setTotalQuantity(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium text-slate-700">Valor total pago (R$)</label>
-          <input
-            type="number"
-            step="0.01"
-            min={0}
-            value={totalCost}
-            onChange={(e) => setTotalCost(e.target.value)}
-            placeholder="quanto pagou pelo lote inteiro"
-            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium text-slate-700">
-            Observação <span className="font-normal text-slate-400">(opcional)</span>
-          </label>
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ex: fornecedor X"
-            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-          />
-        </div>
-      </div>
-
-      {totalQty > 0 && (
-        <div className="mt-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Distribua entre as variações</h3>
-            <span className={`text-xs font-semibold ${remaining === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
-              {remaining === 0 ? 'Quantidade batendo ✓' : `Faltam ${remaining} de ${totalQty} unid.`}
-            </span>
-          </div>
-          <div className="mt-2 space-y-2">
-            {skus.map((sku) => (
-              <div key={sku.id} className="flex items-center gap-3 rounded-lg border border-slate-100 p-2.5">
-                <span className="flex-1 text-sm text-slate-700">{sku.label}</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={allocations[sku.id] ?? ''}
-                  onChange={(e) => setAllocation(sku.id, e.target.value)}
-                  className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                />
-              </div>
-            ))}
-          </div>
-          {unitCost > 0 && (
-            <p className="mt-2 text-xs text-slate-500">
-              Custo por unidade neste lote: <span className="font-semibold text-slate-700">{formatPrice(unitCost)}</span>
-            </p>
-          )}
-        </div>
-      )}
+      <VariantStockAllocator
+        rows={allocatorRows}
+        totalQuantity={totalQuantity}
+        onTotalQuantityChange={setTotalQuantity}
+        totalCost={totalCost}
+        onTotalCostChange={setTotalCost}
+        allocations={allocations}
+        onAllocationChange={setAllocation}
+        note={note}
+        onNoteChange={setNote}
+      />
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 

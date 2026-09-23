@@ -75,7 +75,9 @@ export function NewSaleForm({
           skuId,
           name: selectedProduct.name,
           variantLabel: selectedSku?.label,
-          unitPrice: selectedProduct.promoPrice ?? selectedProduct.price,
+          unitPrice: selectedSku
+            ? selectedSku.promoPrice ?? selectedSku.price ?? selectedProduct.promoPrice ?? selectedProduct.price
+            : selectedProduct.promoPrice ?? selectedProduct.price,
           unitCost,
           quantity: 1,
           maxStock,
@@ -153,11 +155,15 @@ export function NewSaleForm({
               className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
             >
               <option value="">Escolha a variação...</option>
-              {availableSkus.map((sku) => (
-                <option key={sku.id} value={sku.id}>
-                  {sku.label} ({sku.stockQuantity} em estoque)
-                </option>
-              ))}
+              {availableSkus.map((sku) => {
+                const skuPrice = sku.promoPrice ?? sku.price;
+                return (
+                  <option key={sku.id} value={sku.id}>
+                    {sku.label}
+                    {skuPrice != null ? ` — ${formatPrice(skuPrice)}` : ''} ({sku.stockQuantity} em estoque)
+                  </option>
+                );
+              })}
             </select>
           )}
 

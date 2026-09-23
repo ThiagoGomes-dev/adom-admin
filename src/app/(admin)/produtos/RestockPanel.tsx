@@ -183,6 +183,7 @@ function VariantRestockPanel({
     currentStock: sku.stockQuantity,
   }));
   const canSubmit = allocatorCanSubmit(allocatorRows, totalQuantity, totalCost, allocations);
+  const skuLabels = Object.fromEntries([...skus, ...orphanSkus].map((sku) => [sku.id, sku.label]));
 
   const setAllocation = (skuId: string, value: string) => {
     setAllocations((prev) => ({ ...prev, [skuId]: value }));
@@ -292,28 +293,32 @@ function VariantRestockPanel({
         {saving ? 'Registrando...' : 'Registrar entrada'}
       </button>
 
-      <StockEntryHistory entries={entries} />
+      <StockEntryHistory entries={entries} skuLabels={skuLabels} />
     </section>
   );
 }
 
-function StockEntryHistory({ entries }: { entries: StockEntry[] }) {
+function StockEntryHistory({ entries, skuLabels }: { entries: StockEntry[]; skuLabels?: Record<string, string> }) {
   if (entries.length === 0) return null;
 
   return (
     <div className="mt-6 border-t border-slate-100 pt-4">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Histórico de entradas</h3>
       <ul className="mt-3 space-y-2">
-        {entries.map((entry) => (
-          <li key={entry.id} className="flex items-center justify-between gap-3 text-sm text-slate-600">
-            <span>
-              {new Date(entry.createdAt).toLocaleDateString('pt-BR')} · {entry.quantity} unid. ·{' '}
-              {formatPrice(entry.totalCost)}
-              {entry.note ? ` · ${entry.note}` : ''}
-            </span>
-            <span className="shrink-0 text-xs text-slate-400">{formatPrice(entry.unitCost)}/unid.</span>
-          </li>
-        ))}
+        {entries.map((entry) => {
+          const variantLabel = entry.skuId ? skuLabels?.[entry.skuId] : undefined;
+          return (
+            <li key={entry.id} className="flex items-center justify-between gap-3 text-sm text-slate-600">
+              <span>
+                {new Date(entry.createdAt).toLocaleDateString('pt-BR')} · {entry.quantity} unid. ·{' '}
+                {formatPrice(entry.totalCost)}
+                {variantLabel ? ` · ${variantLabel}` : ''}
+                {entry.note ? ` · ${entry.note}` : ''}
+              </span>
+              <span className="shrink-0 text-xs text-slate-400">{formatPrice(entry.unitCost)}/unid.</span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

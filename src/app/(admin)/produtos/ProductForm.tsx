@@ -86,6 +86,7 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
   // SKUs) ainda não existem.
   const [initialTotalQuantity, setInitialTotalQuantity] = useState('');
   const [initialTotalCost, setInitialTotalCost] = useState('');
+  const [initialNote, setInitialNote] = useState('');
   const [initialAllocations, setInitialAllocations] = useState<Record<string, string>>({});
   const [initialPrices, setInitialPrices] = useState<Record<string, string>>({});
   const [initialPromoPrices, setInitialPromoPrices] = useState<Record<string, string>>({});
@@ -340,7 +341,7 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
           totalQuantity: Number(initialTotalQuantity) || 0,
           totalCost: Number(initialTotalCost) || 0,
           allocations,
-          note: 'Estoque inicial',
+          note: initialNote.trim() || 'Estoque inicial',
         });
         if (restockResult.error) {
           setSaving(false);
@@ -604,6 +605,8 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
               onTotalCostChange={setInitialTotalCost}
               allocations={initialAllocations}
               onAllocationChange={(key, value) => setInitialAllocations((prev) => ({ ...prev, [key]: value }))}
+              note={initialNote}
+              onNoteChange={setInitialNote}
             />
           </div>
         </section>

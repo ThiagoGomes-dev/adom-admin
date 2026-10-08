@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { PackagePlus } from 'lucide-react';
 import type { Product, ProductVariantSku, StockEntry } from '@/types';
 import { formatPrice } from '@/lib/currency';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { restockProduct, restockProductVariants } from './actions';
 import { VariantStockAllocator, allocatorCanSubmit, type VariantStockAllocatorRow } from './VariantStockAllocator';
 
@@ -47,6 +49,7 @@ function SimpleRestockPanel({ product, entries }: { product: Product; entries: S
   const newUnitCost = qty > 0 && cost > 0 ? (product.stockQuantity * product.costPrice + cost) / newStock : null;
 
   const handleSubmit = async () => {
+    if (saving) return; // trava contra duplo clique antes do re-render desabilitar o botão
     setError(null);
     if (qty <= 0) {
       setError('Informe a quantidade recebida.');
@@ -79,66 +82,71 @@ function SimpleRestockPanel({ product, entries }: { product: Product; entries: S
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Repor estoque</h2>
-      <p className="mt-1 text-xs text-slate-400">
-        Estoque atual: <span className="font-semibold text-slate-600">{product.stockQuantity} unid.</span> a{' '}
-        {formatPrice(product.costPrice)}/unid. Registre abaixo quando chegar uma nova leva.
-      </p>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
-        <div>
-          <label className="text-sm font-medium text-slate-700">Quantidade recebida</label>
-          <input
-            type="number"
-            min={1}
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-          />
+      <div className="rounded-lg border-l-4 border-emerald-500 bg-emerald-50/50 p-4">
+        <div className="flex items-center gap-2">
+          <PackagePlus size={18} className="text-emerald-600" />
+          <h2 className="text-sm font-semibold text-emerald-900">Chegou mercadoria? Registre a entrada aqui</h2>
         </div>
-        <div>
-          <label className="text-sm font-medium text-slate-700">Valor total pago (R$)</label>
-          <input
-            type="number"
-            step="0.01"
-            min={0}
-            value={totalCost}
-            onChange={(e) => setTotalCost(e.target.value)}
-            placeholder="quanto pagou por essa leva"
-            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium text-slate-700">
-            Observação <span className="font-normal text-slate-400">(opcional)</span>
-          </label>
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ex: fornecedor X"
-            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-          />
-        </div>
-      </div>
-
-      {newUnitCost !== null && (
-        <p className="mt-3 text-xs text-slate-500">
-          Depois desta entrada: <span className="font-semibold text-slate-700">{newStock} unid.</span> · novo custo
-          médio por unidade <span className="font-semibold text-slate-700">{formatPrice(newUnitCost)}</span>
+        <p className="mt-1 text-xs text-emerald-900/60">
+          Estoque atual: <span className="font-semibold">{product.stockQuantity} unid.</span> a{' '}
+          {formatPrice(product.costPrice)}/unid.
         </p>
-      )}
 
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div>
+            <label className="text-sm font-medium text-slate-700">Quantidade recebida</label>
+            <input
+              type="number"
+              min={1}
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              disabled={saving}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-700">Valor total pago (R$)</label>
+            <CurrencyInput
+              value={totalCost}
+              onChange={setTotalCost}
+              placeholder="quanto pagou por essa leva"
+              disabled={saving}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-700">
+              Observação <span className="font-normal text-slate-400">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ex: fornecedor X"
+              disabled={saving}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
+            />
+          </div>
+        </div>
 
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={saving}
-        className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-      >
-        {saving ? 'Registrando...' : 'Registrar entrada'}
-      </button>
+        {newUnitCost !== null && (
+          <p className="mt-3 text-xs text-emerald-900/70">
+            Depois desta entrada: <span className="font-semibold">{newStock} unid.</span> · novo custo médio por
+            unidade <span className="font-semibold">{formatPrice(newUnitCost)}</span>
+          </p>
+        )}
+
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={saving}
+          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+        >
+          {saving ? 'Registrando...' : 'Registrar entrada'}
+        </button>
+      </div>
 
       <StockEntryHistory entries={entries} />
     </section>
@@ -190,6 +198,7 @@ function VariantRestockPanel({
   };
 
   const handleSubmit = async () => {
+    if (saving) return; // trava contra duplo clique antes do re-render desabilitar o botão
     setError(null);
     if (totalQty <= 0) {
       setError('Informe a quantidade total do lote.');
@@ -232,15 +241,47 @@ function VariantRestockPanel({
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Repor estoque por variação</h2>
-
-      {needsInitialDistribution && (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          Este produto tem <strong>{product.stockQuantity} unidades</strong> cadastradas mas ainda sem distribuição
-          entre cor/tamanho. Preencha abaixo quanto tem de cada variação — os campos já vêm com o total atual
-          preenchido.
+      <div className="rounded-lg border-l-4 border-emerald-500 bg-emerald-50/50 p-4">
+        <div className="flex items-center gap-2">
+          <PackagePlus size={18} className="text-emerald-600" />
+          <h2 className="text-sm font-semibold text-emerald-900">Chegou mercadoria? Registre a entrada aqui</h2>
         </div>
-      )}
+
+        {needsInitialDistribution && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            Este produto tem <strong>{product.stockQuantity} unidades</strong> cadastradas mas ainda sem distribuição
+            entre cor/tamanho. Preencha abaixo quanto tem de cada variação — os campos já vêm com o total atual
+            preenchido.
+          </div>
+        )}
+
+        <div className="mt-4">
+          <VariantStockAllocator
+            rows={allocatorRows}
+            totalQuantity={totalQuantity}
+            onTotalQuantityChange={setTotalQuantity}
+            totalCost={totalCost}
+            onTotalCostChange={setTotalCost}
+            allocations={allocations}
+            onAllocationChange={setAllocation}
+            onAllocationsReplace={setAllocations}
+            note={note}
+            onNoteChange={setNote}
+            disabled={saving}
+          />
+        </div>
+
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={saving || !canSubmit}
+          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+        >
+          {saving ? 'Registrando...' : 'Registrar entrada'}
+        </button>
+      </div>
 
       <div className="mt-4 rounded-lg border border-slate-100 p-3">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estoque atual por variação</h3>
@@ -269,29 +310,6 @@ function VariantRestockPanel({
           </ul>
         </div>
       )}
-
-      <VariantStockAllocator
-        rows={allocatorRows}
-        totalQuantity={totalQuantity}
-        onTotalQuantityChange={setTotalQuantity}
-        totalCost={totalCost}
-        onTotalCostChange={setTotalCost}
-        allocations={allocations}
-        onAllocationChange={setAllocation}
-        note={note}
-        onNoteChange={setNote}
-      />
-
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={saving || !canSubmit}
-        className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-      >
-        {saving ? 'Registrando...' : 'Registrar entrada'}
-      </button>
 
       <StockEntryHistory entries={entries} skuLabels={skuLabels} />
     </section>

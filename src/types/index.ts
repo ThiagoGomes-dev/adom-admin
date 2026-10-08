@@ -71,6 +71,33 @@ export interface Sale {
   createdAt: string;
 }
 
+export type OrderStatus = 'pending' | 'confirmed' | 'cancelled';
+
+/** Quem vai confirmar o pagamento deste pedido — 'manual' hoje (o admin clica), 'mercado_pago' quando essa integração existir (texto livre, não enum fechado, pra caber variações futuras como maquininha). */
+export type ConfirmationMethod = string;
+
+/** Pedido criado pelo site — nasce com o estoque já debitado (reserva) e some em `sales` só quando confirmado. */
+export interface Order {
+  id: string;
+  items: SaleItem[];
+  total: number;
+  totalCost: number;
+  paymentMethod: PaymentMethod | null;
+  customerName?: string;
+  customerPhone?: string;
+  note?: string;
+  status: OrderStatus;
+  confirmationMethod: ConfirmationMethod;
+  paymentReference?: string;
+  /** id da venda real gerada em `sales`, preenchido quando confirmado */
+  saleId?: string;
+  createdAt: string;
+  confirmedAt?: string;
+  cancelledAt?: string;
+  /** preenchido quando o admin marca que o pedido foi enviado — confirmado + sem isso = "pago, aguardando envio" */
+  shippedAt?: string;
+}
+
 /** Uma reposição de estoque — registrada ao repor um produto, guarda o custo daquela leva. */
 export interface StockEntry {
   id: string;

@@ -1,5 +1,6 @@
 import type {
   Category,
+  Order,
   PaymentMethod,
   Product,
   ProductVariantGroup,
@@ -119,6 +120,62 @@ export function rowToSale(row: SaleRow): Sale {
     paymentMethod: (row.payment_method as PaymentMethod) ?? null,
     note: row.note ?? undefined,
     createdAt: row.created_at,
+  };
+}
+
+export interface OrderRow {
+  id: string;
+  items: Array<{
+    product_id: string;
+    sku_id?: string | null;
+    variant_label?: string | null;
+    name: string;
+    quantity: number;
+    unit_price: number;
+    unit_cost: number;
+  }>;
+  total: number;
+  total_cost: number;
+  payment_method: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  note: string | null;
+  status: string;
+  confirmation_method: string;
+  payment_reference: string | null;
+  sale_id: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  shipped_at: string | null;
+}
+
+export function rowToOrder(row: OrderRow): Order {
+  return {
+    id: row.id,
+    items: (row.items ?? []).map((i) => ({
+      productId: i.product_id,
+      skuId: i.sku_id ?? undefined,
+      variantLabel: i.variant_label ?? undefined,
+      name: i.name,
+      quantity: i.quantity,
+      unitPrice: Number(i.unit_price),
+      unitCost: Number(i.unit_cost ?? 0),
+    })),
+    total: Number(row.total),
+    totalCost: Number(row.total_cost ?? 0),
+    paymentMethod: (row.payment_method as PaymentMethod) ?? null,
+    customerName: row.customer_name ?? undefined,
+    customerPhone: row.customer_phone ?? undefined,
+    note: row.note ?? undefined,
+    status: row.status as Order['status'],
+    confirmationMethod: row.confirmation_method,
+    paymentReference: row.payment_reference ?? undefined,
+    saleId: row.sale_id ?? undefined,
+    createdAt: row.created_at,
+    confirmedAt: row.confirmed_at ?? undefined,
+    cancelledAt: row.cancelled_at ?? undefined,
+    shippedAt: row.shipped_at ?? undefined,
   };
 }
 

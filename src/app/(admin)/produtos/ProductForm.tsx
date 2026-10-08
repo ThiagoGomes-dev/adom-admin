@@ -2,26 +2,22 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import { Plus, Trash2, X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { Category, Product, ProductVariantGroup, ProductVariantSku, StockEntry } from '@/types';
 import { slugify } from '@/lib/slug';
 import { compressImage } from '@/lib/compressImage';
 import { extractStoragePath } from '@/lib/storagePath';
 import { createClient } from '@/lib/supabase/client';
 import { cartesianCombos, comboKeyOf, comboLabelOf } from '@/lib/variantCombos';
-import {
-  createProduct,
-  updateProduct,
-  listProductVariantSkus,
-  restockProduct,
-  restockProductVariants,
-  setVariantSkuPricing,
-} from './actions';
+import { createProduct, updateProduct, createProductWithVariants, restockProduct, setVariantSkuPricing } from './actions';
 import { createCategory } from '../categorias/actions';
-import { VariantStockAllocator, allocatorCanSubmit, type VariantStockAllocatorRow } from './VariantStockAllocator';
-import { VariantPriceTable } from './VariantPriceTable';
+import type { VariantStockAllocatorRow } from './VariantStockAllocator';
 import { RestockPanel } from './RestockPanel';
+import { WizardStepper } from './wizard/WizardStepper';
+import { ProductInfoStep } from './wizard/ProductInfoStep';
+import { ProductVariantsStep } from './wizard/ProductVariantsStep';
+import { ProductStockStep } from './wizard/ProductStockStep';
+import { validateInfoStep, validateVariantsStep, validateStockStep } from './wizard/productFormValidation';
 import type { ProductInput } from '@/lib/mappers';
 
 interface ProductFormProps {
@@ -29,11 +25,11 @@ interface ProductFormProps {
   product?: Product;
   /** true quando o produto já tem estoque distribuído em SKUs de variação — usado só pra impedir apagar todos os grupos de variante nesse estado. */
   hasVariantStock?: boolean;
-  /** SKUs já existentes do produto (edição) — preço por variação e a aba Estoque usam isso. */
+  /** SKUs já existentes do produto (edição) — preço por variação e o passo Estoque usam isso. */
   skus?: ProductVariantSku[];
-  /** combinações removidas do produto mas que ainda têm estoque/custo — repassado pra aba Estoque. */
+  /** combinações removidas do produto mas que ainda têm estoque/custo — repassado pro passo Estoque. */
   orphanSkus?: ProductVariantSku[];
-  /** histórico de entradas de estoque (edição) — repassado pra aba Estoque. */
+  /** histórico de entradas de estoque (edição) — repassado pro passo Estoque. */
   entries?: StockEntry[];
 }
 
@@ -47,13 +43,17 @@ const parseOptionalNumber = (value: string): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
-const TABS = ['Informações', 'Variantes & Preço', 'Estoque'] as const;
+const STEPS = ['Dados', 'Variações', 'Estoque'] as const;
 
 export function ProductForm({ categories, product, hasVariantStock = false, skus = [], orphanSkus = [], entries = [] }: ProductFormProps) {
   const router = useRouter();
   const isEditing = Boolean(product);
 
+  // Em edição, todos os passos ficam livres (o produto já existe, não há
+  // nada pra travar); na criação, é um wizard guiado — só avança pelo botão
+  // "Avançar" e só volta a um passo já alcançado.
   const [tabIndex, setTabIndex] = useState(0);
+  const [furthestUnlocked, setFurthestUnlocked] = useState(0);
 
   const [name, setName] = useState(product?.name ?? '');
   const [slug, setSlug] = useState(product?.slug ?? '');
@@ -88,7 +88,7 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
   );
 
   // Estoque inicial ao cadastrar um produto novo — opcional (pode cadastrar
-  // sem estoque e repor depois na mesma aba). Com variantes usa o mesmo
+  // sem estoque e repor depois no passo Estoque). Com variantes usa o mesmo
   // VariantStockAllocator do "Repor estoque"; sem variantes, os 3 campos
   // simples abaixo. Chaveado por comboKey porque o produto ainda não existe.
   const [initialTotalQuantity, setInitialTotalQuantity] = useState('');
@@ -102,9 +102,10 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
   const [initialSimpleNote, setInitialSimpleNote] = useState('');
 
   const filteredVariants = useMemo(() => variants.filter((g) => g.name.trim() && g.options.length > 0), [variants]);
+  const draftCombos = useMemo(() => cartesianCombos(filteredVariants), [filteredVariants]);
   const draftAllocatorRows: VariantStockAllocatorRow[] = useMemo(
-    () => cartesianCombos(filteredVariants).map((combo) => ({ key: comboKeyOf(combo), label: comboLabelOf(combo) })),
-    [filteredVariants],
+    () => draftCombos.map((combo) => ({ key: comboKeyOf(combo), label: comboLabelOf(combo) })),
+    [draftCombos],
   );
   const hasVariants = filteredVariants.length > 0;
   const isCreatingWithVariants = !isEditing && hasVariants;
@@ -128,6 +129,11 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
   const handleNameChange = (value: string) => {
     setName(value);
     if (!slugTouched) setSlug(slugify(value));
+  };
+
+  const handleSlugChange = (value: string) => {
+    setSlugTouched(true);
+    setSlug(value);
   };
 
   const handleImageUpload = async (files: FileList | null) => {
@@ -218,8 +224,6 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
     );
   };
 
-  const isColorGroup = (groupName: string) => /cor/i.test(groupName);
-
   const openCategoryModal = () => {
     setNewCategoryName('');
     setCategoryError(null);
@@ -246,43 +250,69 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
     setShowCategoryModal(false);
   };
 
+  // Validação por passo (ver wizard/productFormValidation.ts) — reaproveitada
+  // tanto pelo "Avançar" (gate entre passos, só na criação) quanto pelo
+  // submit final, pra nunca ter duas implementações da mesma regra.
+  const runInfoValidation = () => validateInfoStep({ name, slug, category });
+  const runVariantsValidation = () =>
+    validateVariantsStep({ hasVariantStock, filteredVariants, hasVariants, variantPriceRows, variantPrices });
+  const runStockValidation = () =>
+    validateStockStep({
+      isEditing,
+      isCreatingWithVariants,
+      hasVariants,
+      draftAllocatorRows,
+      initialTotalQuantity,
+      initialTotalCost,
+      initialAllocations,
+      initialSimpleQuantity,
+      initialSimpleCost,
+    });
+
+  const goNext = () => {
+    setError(null);
+    const err = tabIndex === 0 ? runInfoValidation() : tabIndex === 1 ? runVariantsValidation() : null;
+    if (err) {
+      setError(err);
+      return;
+    }
+    const next = tabIndex + 1;
+    setTabIndex(next);
+    setFurthestUnlocked((f) => Math.max(f, next));
+  };
+
+  const goBack = () => {
+    setError(null);
+    setTabIndex((i) => Math.max(0, i - 1));
+  };
+
+  const handleStepClick = (i: number) => {
+    if (isEditing || i <= furthestUnlocked) {
+      setError(null);
+      setTabIndex(i);
+    }
+  };
+
   const handleSubmit = async () => {
     setError(null);
 
-    if (!name.trim() || !slug.trim() || !category) {
-      setError('Preencha nome, slug e categoria.');
+    const infoError = runInfoValidation();
+    if (infoError) {
+      setError(infoError);
       setTabIndex(0);
       return;
     }
 
-    if (hasVariantStock && filteredVariants.length === 0) {
-      setError('Este produto tem estoque distribuído por variação — remova o estoque das variações (na aba Estoque) antes de apagar todos os grupos.');
+    const variantsError = runVariantsValidation();
+    if (variantsError) {
+      setError(variantsError);
       setTabIndex(1);
       return;
     }
 
-    if (hasVariants) {
-      const missingPrice =
-        variantPriceRows.length === 0 || variantPriceRows.some((row) => !(variantPrices[row.key] ?? '').trim());
-      if (missingPrice) {
-        setError('Preencha o preço de todas as variações na aba "Variantes & Preço".');
-        setTabIndex(1);
-        return;
-      }
-    }
-
-    const attemptingInitialVariantStock =
-      isCreatingWithVariants && (Number(initialTotalQuantity) > 0 || Number(initialTotalCost) > 0);
-    if (attemptingInitialVariantStock && !allocatorCanSubmit(draftAllocatorRows, initialTotalQuantity, initialTotalCost, initialAllocations)) {
-      setError('Na aba Estoque: informe a quantidade total do lote, o valor pago e distribua entre as variações (a soma precisa bater) — ou deixe tudo em branco pra cadastrar sem estoque ainda.');
-      setTabIndex(2);
-      return;
-    }
-
-    const attemptingInitialSimpleStock =
-      !isEditing && !hasVariants && (Number(initialSimpleQuantity) > 0 || Number(initialSimpleCost) > 0);
-    if (attemptingInitialSimpleStock && (Number(initialSimpleQuantity) <= 0 || Number(initialSimpleCost) <= 0)) {
-      setError('Na aba Estoque: informe quantidade e valor total pago do estoque inicial — ou deixe os dois em branco pra cadastrar sem estoque ainda.');
+    const stockError = runStockValidation();
+    if (stockError) {
+      setError(stockError);
       setTabIndex(2);
       return;
     }
@@ -301,8 +331,8 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
       description,
       shortDescription: shortDescription || undefined,
       // estoque/custo não são editados por aqui — cadastro novo começa
-      // zerado (a aba Estoque registra a entrada inicial, se houver);
-      // edição preserva o que já está salvo (a aba Estoque cuida do resto).
+      // zerado (o passo Estoque registra a entrada inicial, se houver);
+      // edição preserva o que já está salvo (o passo Estoque cuida do resto).
       costPrice: isEditing ? product!.costPrice : 0,
       price: resolvedPrice,
       promoPrice: resolvedPromoPrice,
@@ -342,6 +372,41 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
           return;
         }
       }
+    } else if (hasVariants) {
+      // Cadastro com variação: produto + SKUs + preço + lote inicial numa
+      // única transação no banco (create_product_with_variants) — nunca
+      // mais fica produto/SKU parcialmente salvo se algo falhar no meio.
+      const attemptingInitialVariantStock =
+        isCreatingWithVariants && (Number(initialTotalQuantity) > 0 || Number(initialTotalCost) > 0);
+
+      const result = await createProductWithVariants({
+        product: input,
+        skus: draftCombos.map((combo) => {
+          const key = comboKeyOf(combo);
+          return {
+            comboKey: key,
+            combo,
+            price: parseOptionalNumber(initialPrices[key] ?? ''),
+            promoPrice: parseOptionalNumber(initialPromoPrices[key] ?? ''),
+          };
+        }),
+        restock: attemptingInitialVariantStock
+          ? {
+              totalQuantity: Number(initialTotalQuantity) || 0,
+              totalCost: Number(initialTotalCost) || 0,
+              allocations: draftAllocatorRows
+                .filter((row) => (Number(initialAllocations[row.key]) || 0) > 0)
+                .map((row) => ({ comboKey: row.key, quantity: Number(initialAllocations[row.key]) || 0 })),
+              note: initialNote.trim() || 'Estoque inicial',
+            }
+          : undefined,
+      });
+
+      if (result.error || !result.id) {
+        setSaving(false);
+        setError(result.error ?? 'Erro ao criar produto.');
+        return;
+      }
     } else {
       const result = await createProduct(input);
       if (result.error || !result.id) {
@@ -350,46 +415,8 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
         return;
       }
 
-      if (hasVariants) {
-        const { skus: createdSkus } = await listProductVariantSkus(result.id);
-        const byComboKey = new Map(createdSkus.map((s) => [s.comboKey, s]));
-
-        const pricingEntries = draftAllocatorRows
-          .map((row) => ({
-            sku: byComboKey.get(row.key),
-            price: parseOptionalNumber(initialPrices[row.key] ?? ''),
-            promoPrice: parseOptionalNumber(initialPromoPrices[row.key] ?? ''),
-          }))
-          .filter((e): e is { sku: ProductVariantSku; price: number | undefined; promoPrice: number | undefined } => Boolean(e.sku))
-          .map((e) => ({ skuId: e.sku.id, price: e.price, promoPrice: e.promoPrice }));
-
-        const pricingResult = await setVariantSkuPricing(pricingEntries);
-        if (pricingResult.error) {
-          setSaving(false);
-          setError(pricingResult.error);
-          return;
-        }
-
-        if (attemptingInitialVariantStock) {
-          const allocations = draftAllocatorRows
-            .map((row) => ({ sku: byComboKey.get(row.key), quantity: Number(initialAllocations[row.key]) || 0 }))
-            .filter((a): a is { sku: ProductVariantSku; quantity: number } => Boolean(a.sku) && a.quantity > 0)
-            .map((a) => ({ skuId: a.sku.id, quantity: a.quantity }));
-
-          const restockResult = await restockProductVariants({
-            productId: result.id,
-            totalQuantity: Number(initialTotalQuantity) || 0,
-            totalCost: Number(initialTotalCost) || 0,
-            allocations,
-            note: initialNote.trim() || 'Estoque inicial',
-          });
-          if (restockResult.error) {
-            setSaving(false);
-            setError(restockResult.error);
-            return;
-          }
-        }
-      } else if (attemptingInitialSimpleStock) {
+      const attemptingInitialSimpleStock = Number(initialSimpleQuantity) > 0 || Number(initialSimpleCost) > 0;
+      if (attemptingInitialSimpleStock) {
         const restockResult = await restockProduct({
           productId: result.id,
           quantity: Number(initialSimpleQuantity) || 0,
@@ -397,8 +424,13 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
           note: initialSimpleNote.trim() || 'Estoque inicial',
         });
         if (restockResult.error) {
+          // o produto já foi criado nesse ponto (sem o problema de SKU
+          // dependente de ID que existe com variação) — fica na tela com um
+          // erro explícito em vez de sumir pra lista com o estoque incompleto.
           setSaving(false);
-          setError(restockResult.error);
+          setError(
+            `Produto criado, mas a entrada de estoque falhou: ${restockResult.error}. Edite o produto em "/produtos" para repor o estoque.`,
+          );
           return;
         }
       }
@@ -409,432 +441,150 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
     router.refresh();
   };
 
+  const isLastStep = tabIndex === STEPS.length - 1;
+  const isFirstStep = tabIndex === 0;
+
   return (
     <div className="max-w-4xl">
-      <div className="flex gap-1 border-b border-slate-200">
-        {TABS.map((label, i) => (
-          <button
-            key={label}
-            type="button"
-            onClick={() => setTabIndex(i)}
-            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
-              tabIndex === i
-                ? 'border-slate-900 text-slate-900'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <WizardStepper
+        steps={STEPS}
+        currentIndex={tabIndex}
+        furthestUnlocked={isEditing ? STEPS.length - 1 : furthestUnlocked}
+        mode={isEditing ? 'tabs' : 'wizard'}
+        onStepClick={handleStepClick}
+      />
 
       <div className="space-y-6 py-6">
         {tabIndex === 0 && (
-          <>
-            {/* Dados básicos */}
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Dados básicos</h2>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label className="text-sm font-medium text-slate-700">Nome</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="text-sm font-medium text-slate-700">Slug (URL)</label>
-                  <input
-                    type="text"
-                    value={slug}
-                    onChange={(e) => {
-                      setSlugTouched(true);
-                      setSlug(e.target.value);
-                    }}
-                    className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="text-sm font-medium text-slate-700">Descrição</label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={4}
-                    className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="text-sm font-medium text-slate-700">Descrição curta</label>
-                  <input
-                    type="text"
-                    value={shortDescription}
-                    onChange={(e) => setShortDescription(e.target.value)}
-                    className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-slate-700">Categoria</label>
-                    <button
-                      type="button"
-                      onClick={openCategoryModal}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
-                    >
-                      <Plus size={13} /> nova categoria
-                    </button>
-                  </div>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  >
-                    {categoryList.map((c) => (
-                      <option key={c.id} value={c.slug}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Tags (separadas por vírgula)</label>
-                  <input
-                    type="text"
-                    value={tags}
-                    onChange={(e) => setTags(e.target.value)}
-                    placeholder="mais vendido, promoção"
-                    className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex gap-6">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
-                  Produto em destaque
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={available} onChange={(e) => setAvailable(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
-                  Visível no site
-                </label>
-              </div>
-            </section>
-
-            {/* Fotos */}
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Fotos</h2>
-              <p className="mt-1 text-xs text-slate-400">A primeira foto é a capa — a que aparece na lista e no site.</p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                {images.map((url, index) => (
-                  <div key={url} className="group relative h-24 w-24 overflow-hidden rounded-lg border border-slate-200">
-                    <Image src={url} alt="" fill sizes="96px" className="object-cover" />
-                    {index === 0 && (
-                      <span className="absolute left-1 top-1 rounded bg-slate-900/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        Capa
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeImage(url)}
-                      className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                    >
-                      <X size={12} />
-                    </button>
-                    <div className="absolute inset-x-0 bottom-0 flex justify-center gap-1 bg-gradient-to-t from-black/70 to-transparent p-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button
-                        type="button"
-                        disabled={index === 0}
-                        onClick={() => moveImage(index, -1)}
-                        className="rounded-full bg-white/90 p-1 text-slate-700 disabled:pointer-events-none disabled:opacity-30"
-                        title="Mover pra trás"
-                      >
-                        <ChevronLeft size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={index === images.length - 1}
-                        onClick={() => moveImage(index, 1)}
-                        className="rounded-full bg-white/90 p-1 text-slate-700 disabled:pointer-events-none disabled:opacity-30"
-                        title="Mover pra frente"
-                      >
-                        <ChevronRight size={12} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                <label className="flex h-24 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 hover:border-slate-400 hover:text-slate-500">
-                  {uploading ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
-                  <span className="text-xs">{uploading ? 'Enviando...' : 'Adicionar'}</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    disabled={uploading}
-                    onChange={(e) => handleImageUpload(e.target.files)}
-                  />
-                </label>
-              </div>
-            </section>
-          </>
+          <ProductInfoStep
+            name={name}
+            onNameChange={handleNameChange}
+            slug={slug}
+            onSlugChange={handleSlugChange}
+            description={description}
+            onDescriptionChange={setDescription}
+            shortDescription={shortDescription}
+            onShortDescriptionChange={setShortDescription}
+            categoryList={categoryList}
+            category={category}
+            onCategoryChange={setCategory}
+            onOpenCategoryModal={openCategoryModal}
+            tags={tags}
+            onTagsChange={setTags}
+            featured={featured}
+            onFeaturedChange={setFeatured}
+            available={available}
+            onAvailableChange={setAvailable}
+            images={images}
+            uploading={uploading}
+            onImageUpload={handleImageUpload}
+            onRemoveImage={removeImage}
+            onMoveImage={moveImage}
+          />
         )}
 
         {tabIndex === 1 && (
-          <>
-            {/* Variantes */}
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Variantes</h2>
-                <button
-                  type="button"
-                  onClick={addVariantGroup}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  <Plus size={14} /> Adicionar grupo
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-4">
-                {variants.map((group) => (
-                  <div key={group.id} className="rounded-lg border border-slate-200 p-4">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={group.name}
-                        onChange={(e) => updateVariantGroupName(group.id, e.target.value)}
-                        placeholder="Nome do grupo (ex: Cor, Tamanho)"
-                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                      />
-                      <button type="button" onClick={() => removeVariantGroup(group.id)} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600">
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-
-                    <div className="mt-3 space-y-3">
-                      {group.options.map((option) => (
-                        <div key={option.id} className="rounded-lg border border-slate-100 p-2">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={option.label}
-                              onChange={(e) => updateVariantOption(group.id, option.id, 'label', e.target.value)}
-                              placeholder="Ex: Azul Marinho"
-                              className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                            />
-                            {isColorGroup(group.name) && (
-                              <input
-                                type="color"
-                                value={option.meta || '#000000'}
-                                onChange={(e) => updateVariantOption(group.id, option.id, 'meta', e.target.value)}
-                                className="h-9 w-12 shrink-0 cursor-pointer rounded-lg border border-slate-300"
-                              />
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => removeVariantOption(group.id, option.id)}
-                              className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-
-                          {isColorGroup(group.name) && (
-                            <div className="mt-2">
-                              {images.length === 0 ? (
-                                <p className="text-xs text-slate-400">
-                                  Adicione fotos na aba &quot;Informações&quot; para poder vincular a esta cor.
-                                </p>
-                              ) : (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {images.map((url) => {
-                                    const selected = option.image === url;
-                                    return (
-                                      <button
-                                        key={url}
-                                        type="button"
-                                        onClick={() =>
-                                          updateVariantOption(group.id, option.id, 'image', selected ? '' : url)
-                                        }
-                                        className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-2 ${
-                                          selected ? 'border-slate-900' : 'border-transparent opacity-60 hover:opacity-100'
-                                        }`}
-                                        title={selected ? 'Foto vinculada a esta cor (clique para remover)' : 'Vincular esta foto a esta cor'}
-                                      >
-                                        <Image src={url} alt="" fill sizes="48px" className="object-cover" />
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => addVariantOption(group.id)}
-                        className="text-xs font-semibold text-slate-600 hover:text-slate-900"
-                      >
-                        + Adicionar opção
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {variants.length === 0 && <p className="text-sm text-slate-500">Nenhum grupo de variante — o produto não terá seleção de cor/tamanho.</p>}
-              </div>
-            </section>
-
-            {/* Preço */}
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Preço</h2>
-              {hasVariants ? (
-                <>
-                  <p className="mt-1 text-xs text-slate-400">
-                    Estoque e custo ficam na aba &quot;Estoque&quot; — aqui é só preço de venda.
-                  </p>
-                  {variantPriceRows.length > 0 ? (
-                    <div className="mt-4">
-                      <VariantPriceTable
-                        rows={variantPriceRows}
-                        prices={variantPrices}
-                        onPriceChange={setVariantPrice}
-                        promoPrices={variantPromoPrices}
-                        onPromoPriceChange={setVariantPromoPrice}
-                        showInventoryColumns={isEditing}
-                      />
-                    </div>
-                  ) : (
-                    <p className="mt-3 text-xs text-slate-400">Defina ao menos um grupo de variante acima para poder definir o preço de cada combinação.</p>
-                  )}
-                </>
-              ) : (
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Preço (R$)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Preço promocional</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={promoPrice}
-                      onChange={(e) => setPromoPrice(e.target.value)}
-                      placeholder="opcional"
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-                </div>
-              )}
-            </section>
-          </>
+          <ProductVariantsStep
+            variants={variants}
+            images={images}
+            onAddVariantGroup={addVariantGroup}
+            onRemoveVariantGroup={removeVariantGroup}
+            onUpdateVariantGroupName={updateVariantGroupName}
+            onAddVariantOption={addVariantOption}
+            onUpdateVariantOption={updateVariantOption}
+            onRemoveVariantOption={removeVariantOption}
+            hasVariants={hasVariants}
+            isEditing={isEditing}
+            variantPriceRows={variantPriceRows}
+            variantPrices={variantPrices}
+            onVariantPriceChange={setVariantPrice}
+            variantPromoPrices={variantPromoPrices}
+            onVariantPromoPriceChange={setVariantPromoPrice}
+            price={price}
+            onPriceChange={setPrice}
+            promoPrice={promoPrice}
+            onPromoPriceChange={setPromoPrice}
+          />
         )}
 
-        {tabIndex === 2 && (
-          <>
-            {isEditing ? (
-              <RestockPanel product={product!} entries={entries} skus={skus} orphanSkus={orphanSkus} />
-            ) : hasVariants ? (
-              <section className="rounded-xl border border-slate-200 bg-white p-5">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Estoque inicial</h2>
-                <p className="mt-1 text-xs text-slate-400">
-                  Opcional — pode cadastrar o produto sem estoque ainda e repor depois aqui mesmo. Se preencher,
-                  informe o valor total do lote e distribua a quantidade entre cor/tamanho (a soma precisa bater com
-                  o total).
-                </p>
-                <div className="mt-4">
-                  <VariantStockAllocator
-                    rows={draftAllocatorRows}
-                    totalQuantity={initialTotalQuantity}
-                    onTotalQuantityChange={setInitialTotalQuantity}
-                    totalCost={initialTotalCost}
-                    onTotalCostChange={setInitialTotalCost}
-                    allocations={initialAllocations}
-                    onAllocationChange={(key, value) => setInitialAllocations((prev) => ({ ...prev, [key]: value }))}
-                    note={initialNote}
-                    onNoteChange={setInitialNote}
-                  />
-                </div>
-              </section>
-            ) : (
-              <section className="rounded-xl border border-slate-200 bg-white p-5">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Estoque inicial</h2>
-                <p className="mt-1 text-xs text-slate-400">
-                  Opcional — pode cadastrar o produto sem estoque ainda e repor depois aqui mesmo.
-                </p>
-                <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Quantidade recebida</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={initialSimpleQuantity}
-                      onChange={(e) => setInitialSimpleQuantity(e.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Valor total pago (R$)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      value={initialSimpleCost}
-                      onChange={(e) => setInitialSimpleCost(e.target.value)}
-                      placeholder="quanto pagou no total"
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">
-                      Observação <span className="font-normal text-slate-400">(opcional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={initialSimpleNote}
-                      onChange={(e) => setInitialSimpleNote(e.target.value)}
-                      placeholder="Ex: fornecedor X"
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-                </div>
-                {Number(initialSimpleQuantity) > 0 && Number(initialSimpleCost) > 0 && (
-                  <p className="mt-3 text-xs text-slate-500">
-                    Custo por unidade:{' '}
-                    <span className="font-semibold text-slate-700">
-                      {(Number(initialSimpleCost) / Number(initialSimpleQuantity)).toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}
-                    </span>
-                  </p>
-                )}
-              </section>
-            )}
-          </>
-        )}
+        {tabIndex === 2 &&
+          (isEditing ? (
+            <RestockPanel product={product!} entries={entries} skus={skus} orphanSkus={orphanSkus} />
+          ) : (
+            <ProductStockStep
+              hasVariants={hasVariants}
+              draftAllocatorRows={draftAllocatorRows}
+              initialTotalQuantity={initialTotalQuantity}
+              onInitialTotalQuantityChange={setInitialTotalQuantity}
+              initialTotalCost={initialTotalCost}
+              onInitialTotalCostChange={setInitialTotalCost}
+              initialAllocations={initialAllocations}
+              onInitialAllocationChange={(key, value) => setInitialAllocations((prev) => ({ ...prev, [key]: value }))}
+              onInitialAllocationsReplace={setInitialAllocations}
+              initialNote={initialNote}
+              onInitialNoteChange={setInitialNote}
+              initialSimpleQuantity={initialSimpleQuantity}
+              onInitialSimpleQuantityChange={setInitialSimpleQuantity}
+              initialSimpleCost={initialSimpleCost}
+              onInitialSimpleCostChange={setInitialSimpleCost}
+              initialSimpleNote={initialSimpleNote}
+              onInitialSimpleNoteChange={setInitialSimpleNote}
+            />
+          ))}
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="mt-2 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={saving}
-          className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-        >
-          {saving ? 'Salvando...' : isEditing ? 'Salvar alterações' : 'Criar produto'}
-        </button>
-        <button type="button" onClick={() => router.push('/produtos')} className="text-sm font-medium text-slate-500 hover:text-slate-900">
-          Cancelar
-        </button>
+        {isEditing ? (
+          <>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving}
+              className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              {saving ? 'Salvando...' : 'Salvar alterações'}
+            </button>
+            <button type="button" onClick={() => router.push('/produtos')} className="text-sm font-medium text-slate-500 hover:text-slate-900">
+              Cancelar
+            </button>
+          </>
+        ) : (
+          <>
+            {!isFirstStep && (
+              <button
+                type="button"
+                onClick={goBack}
+                disabled={saving}
+                className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                ← Voltar
+              </button>
+            )}
+            {isLastStep ? (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={saving}
+                className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {saving ? 'Criando...' : 'Criar produto'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={goNext}
+                className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                Avançar →
+              </button>
+            )}
+            <button type="button" onClick={() => router.push('/produtos')} className="text-sm font-medium text-slate-500 hover:text-slate-900">
+              Cancelar
+            </button>
+          </>
+        )}
       </div>
 
       {showCategoryModal && (

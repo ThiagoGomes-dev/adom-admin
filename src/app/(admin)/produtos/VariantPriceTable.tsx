@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { formatPrice } from '@/lib/currency';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 
 export interface VariantPriceRow {
   /** comboKey (produto ainda não existe) ou sku.id (produto já existe) */
@@ -52,24 +53,18 @@ export function VariantPriceTable({
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <div>
           <label className="text-xs font-medium text-slate-600">Aplicar a todas</label>
-          <input
-            type="number"
-            step="0.01"
-            min={0}
+          <CurrencyInput
             value={bulkPrice}
-            onChange={(e) => setBulkPrice(e.target.value)}
+            onChange={setBulkPrice}
             placeholder="Preço"
             className="mt-1 w-28 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </div>
         <div>
           <label className="text-xs font-medium text-slate-600">Promo (opcional)</label>
-          <input
-            type="number"
-            step="0.01"
-            min={0}
+          <CurrencyInput
             value={bulkPromo}
-            onChange={(e) => setBulkPromo(e.target.value)}
+            onChange={setBulkPromo}
             placeholder="—"
             className="mt-1 w-28 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
@@ -105,23 +100,17 @@ export function VariantPriceTable({
               <tr key={row.key}>
                 <td className="px-3 py-2 text-slate-700">{row.label}</td>
                 <td className="px-3 py-2 text-right">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
+                  <CurrencyInput
                     value={prices[row.key] ?? ''}
-                    onChange={(e) => onPriceChange(row.key, e.target.value)}
+                    onChange={(value) => onPriceChange(row.key, value)}
                     placeholder="Preço"
                     className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
                   />
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
+                  <CurrencyInput
                     value={promoPrices[row.key] ?? ''}
-                    onChange={(e) => onPromoPriceChange(row.key, e.target.value)}
+                    onChange={(value) => onPromoPriceChange(row.key, value)}
                     placeholder="—"
                     className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-right text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
                   />

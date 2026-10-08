@@ -481,3 +481,357 @@ $$;
 
 revoke all on function restock_product_variants(uuid, integer, numeric, jsonb, text) from public;
 grant execute on function restock_product_variants(uuid, integer, numeric, jsonb, text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Cadastro atômico de produto com variação
+-- ---------------------------------------------------------------------------
+
+-- Cadastra um produto com variação numa única transação: insere o produto,
+-- cria um SKU por combinação (já com preço, quando informado) e, se houver
+-- lote inicial, distribui o estoque reaproveitando restock_product_variants
+-- (mesma reconciliação "soma tem que bater" de sempre). Substitui a cadeia
+-- createProduct -> listProductVariantSkus -> setVariantSkuPricing ->
+-- restockProductVariants que o admin fazia em 4 chamadas separadas sem
+-- transação — se qualquer parte falhar aqui, nada fica salvo (nem o produto,
+-- nem os SKUs), em vez de deixar dado parcial órfão.
+create or replace function create_product_with_variants(
+  p_product jsonb,       -- mesmo formato de productInputToRow() em src/lib/mappers.ts (colunas já em snake_case)
+  p_skus jsonb,           -- [{"combo_key": "...", "combo": [...], "price": num|null, "promo_price": num|null}, ...]
+  p_allocations jsonb,    -- [{"combo_key": "...", "quantity": int}, ...] — '[]' quando não há estoque inicial
+  p_total_quantity integer,
+  p_total_cost numeric,
+  p_note text
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_product_id uuid;
+  v_sku jsonb;
+  v_sku_id uuid;
+  v_resolved_allocations jsonb := '[]'::jsonb;
+  v_qty integer;
+begin
+  if exists (select 1 from products where slug = p_product->>'slug') then
+    raise exception 'Já existe um produto com o slug "%"', p_product->>'slug';
+  end if;
+
+  insert into products (
+    slug, name, description, short_description, cost_price, price, promo_price,
+    images, category_slug, variants, available, featured, tags, stock_quantity
+  )
+  values (
+    p_product->>'slug',
+    p_product->>'name',
+    coalesce(p_product->>'description', ''),
+    p_product->>'short_description',
+    0,
+    coalesce((p_product->>'price')::numeric, 0),
+    nullif(p_product->>'promo_price', '')::numeric,
+    coalesce((select array_agg(x) from jsonb_array_elements_text(p_product->'images') x), '{}'),
+    p_product->>'category_slug',
+    coalesce(p_product->'variants', '[]'::jsonb),
+    coalesce((p_product->>'available')::boolean, true),
+    coalesce((p_product->>'featured')::boolean, false),
+    coalesce((select array_agg(x) from jsonb_array_elements_text(p_product->'tags') x), '{}'),
+    0
+  )
+  returning id into v_product_id;
+
+  for v_sku in select * from jsonb_array_elements(p_skus) loop
+    insert into product_variant_skus (product_id, combo, combo_key, price, promo_price)
+    values (
+      v_product_id,
+      v_sku->'combo',
+      v_sku->>'combo_key',
+      nullif(v_sku->>'price', '')::numeric,
+      nullif(v_sku->>'promo_price', '')::numeric
+    )
+    returning id into v_sku_id;
+
+    select (a->>'quantity')::int into v_qty
+      from jsonb_array_elements(p_allocations) a
+      where a->>'combo_key' = v_sku->>'combo_key';
+
+    if v_qty is not null and v_qty > 0 then
+      v_resolved_allocations := v_resolved_allocations
+        || jsonb_build_object('sku_id', v_sku_id, 'quantity', v_qty);
+    end if;
+  end loop;
+
+  if p_allocations is not null and jsonb_array_length(p_allocations) > 0 then
+    perform restock_product_variants(v_product_id, p_total_quantity, p_total_cost, v_resolved_allocations, p_note);
+  end if;
+
+  return v_product_id;
+end;
+$$;
+
+revoke all on function create_product_with_variants(jsonb, jsonb, jsonb, integer, numeric, text) from public;
+grant execute on function create_product_with_variants(jsonb, jsonb, jsonb, integer, numeric, text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Pedidos (criados pelo site, pendentes até confirmação de pagamento)
+-- ---------------------------------------------------------------------------
+
+-- Cada linha é um pedido feito pelo site. Nasce com o estoque já debitado
+-- (reserva) e `status = 'pending'`; o admin confirma (vira venda de
+-- verdade, em `sales`) ou cancela (devolve o estoque) — ver as duas
+-- funções abaixo. `confirmation_method`/`payment_reference` já preparam o
+-- terreno pra quando o pagamento online (Mercado Pago) existir: o checkout
+-- vai chamar a mesma `create_order` só trocando esses dois campos, e o
+-- webhook de pagamento vai chamar as mesmas `confirm_order`/`cancel_order`
+-- que o botão do admin já chama hoje — nada aqui precisa ser refeito.
+create table if not exists orders (
+  id uuid primary key default gen_random_uuid(),
+  items jsonb not null default '[]', -- mesmo shape do snapshot de sales.items: [{product_id, sku_id, variant_label, name, quantity, unit_price, unit_cost}]
+  total numeric(10, 2) not null default 0,
+  total_cost numeric(10, 2) not null default 0,
+  payment_method text, -- 'pix' | 'credito' | null — forma escolhida no checkout do site
+  customer_name text,
+  customer_phone text,
+  note text,
+  status text not null default 'pending' check (status in ('pending', 'confirmed', 'cancelled')),
+  confirmation_method text not null default 'manual', -- 'manual' hoje | 'mercado_pago' depois — texto livre, não enum fechado
+  payment_reference text, -- id de pagamento/preference do Mercado Pago — vazio até a integração existir
+  sale_id uuid references sales (id) on delete set null, -- preenchido quando confirmado
+  created_at timestamptz not null default now(),
+  confirmed_at timestamptz,
+  cancelled_at timestamptz,
+  shipped_at timestamptz -- preenchido quando o admin marca como enviado (pedido confirmado + não enviado = "aguardando envio")
+);
+
+-- migração: status de envio em bancos já existentes (sem efeito em bancos novos, já criado acima)
+alter table orders add column if not exists shipped_at timestamptz;
+
+alter table orders enable row level security;
+
+-- Leitura/gestão só autenticado (painel admin). Anônimo nunca lê/escreve
+-- direto nesta tabela — a única escrita de anônimo passa pela função
+-- `create_order` abaixo (security definer), que valida tudo antes de inserir.
+drop policy if exists "Authenticated manage orders" on orders;
+create policy "Authenticated manage orders" on orders for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+create index if not exists orders_status_idx on orders (status, created_at desc);
+
+-- Habilita notificação em tempo real (Supabase Realtime) pro admin saber
+-- na hora que um pedido novo chegou, sem precisar de infraestrutura extra.
+alter publication supabase_realtime add table orders;
+
+-- Replica identity "full": sem isso, o Supabase Realtime só manda a chave
+-- primária no "old" de um UPDATE — e o front precisa saber o status
+-- ANTERIOR (pending -> confirmed, confirmed -> enviado) pra decidir que
+-- toast mostrar e se a contagem de pendências deve mudar.
+alter table orders replica identity full;
+
+-- Cria um pedido pendente a partir do carrinho do site: valida estoque e
+-- DECREMENTA na hora (reserva), mas não grava em `sales` ainda — só quando
+-- confirmado. É a única escrita que um visitante anônimo faz no banco, por
+-- isso é security definer (RLS de products/product_variant_skus só permite
+-- escrita autenticada) — e por isso valida tudo internamente (não confia só
+-- na camada HTTP): quantidade positiva, teto de itens/quantidade por
+-- pedido, mesma trava de estoque `for update` que `register_sale` já usa.
+-- Não aceita nenhum parâmetro que não seja estritamente necessário pro
+-- pedido (sem p_status, sem p_sale_id) — nada que o chamador anônimo passe
+-- pode pular as validações abaixo.
+create or replace function create_order(
+  p_items jsonb, -- [{"product_id": "...", "sku_id": "..."|null, "quantity": int}, ...] já resolvido
+  p_payment_method text,
+  p_customer_name text,
+  p_customer_phone text,
+  p_note text,
+  p_confirmation_method text default 'manual'
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_item jsonb;
+  v_product products%rowtype;
+  v_sku product_variant_skus%rowtype;
+  v_sku_id uuid;
+  v_variant_label text;
+  v_quantity integer;
+  v_unit_price numeric(10, 2);
+  v_unit_cost numeric(10, 2);
+  v_snapshot jsonb := '[]'::jsonb;
+  v_total numeric(10, 2) := 0;
+  v_total_cost numeric(10, 2) := 0;
+  v_item_count integer := 0;
+  v_order_id uuid;
+begin
+  if p_items is null or jsonb_array_length(p_items) = 0 then
+    raise exception 'Pedido sem itens';
+  end if;
+  if jsonb_array_length(p_items) > 30 then
+    raise exception 'Pedido com muitos itens';
+  end if;
+  if coalesce(trim(p_customer_phone), '') = '' then
+    raise exception 'Telefone do cliente é obrigatório';
+  end if;
+
+  for v_item in select * from jsonb_array_elements(p_items) loop
+    v_quantity := (v_item->>'quantity')::int;
+    if v_quantity is null or v_quantity <= 0 or v_quantity > 50 then
+      raise exception 'Quantidade inválida para um dos itens';
+    end if;
+    v_item_count := v_item_count + v_quantity;
+    if v_item_count > 200 then
+      raise exception 'Pedido excede o limite de itens permitido';
+    end if;
+
+    v_sku_id := nullif(v_item->>'sku_id', '')::uuid;
+    v_variant_label := null;
+
+    select * into v_product from products where id = (v_item->>'product_id')::uuid for update;
+    if not found then
+      raise exception 'Produto não encontrado';
+    end if;
+
+    if v_sku_id is not null then
+      select * into v_sku from product_variant_skus where id = v_sku_id and product_id = v_product.id for update;
+      if not found then
+        raise exception 'Variação não encontrada para "%"', v_product.name;
+      end if;
+      if v_sku.stock_quantity < v_quantity then
+        raise exception 'Estoque insuficiente para "%": disponível %, pedido %', v_product.name, v_sku.stock_quantity, v_quantity;
+      end if;
+
+      v_unit_price := coalesce(v_sku.promo_price, v_sku.price, v_product.promo_price, v_product.price);
+      v_unit_cost := coalesce(v_sku.cost_price, 0);
+
+      select string_agg(elem->>'optionLabel', ' / ' order by elem->>'groupName')
+        into v_variant_label
+        from jsonb_array_elements(v_sku.combo) elem;
+
+      update product_variant_skus set stock_quantity = stock_quantity - v_quantity where id = v_sku.id;
+    else
+      if v_product.stock_quantity < v_quantity then
+        raise exception 'Estoque insuficiente para "%": disponível %, pedido %', v_product.name, v_product.stock_quantity, v_quantity;
+      end if;
+
+      v_unit_price := coalesce(v_product.promo_price, v_product.price);
+      v_unit_cost := coalesce(v_product.cost_price, 0);
+
+      update products
+        set stock_quantity = stock_quantity - v_quantity,
+            available = (stock_quantity - v_quantity) > 0
+        where id = v_product.id;
+    end if;
+
+    v_snapshot := v_snapshot || jsonb_build_object(
+      'product_id', v_product.id,
+      'sku_id', v_sku_id,
+      'variant_label', v_variant_label,
+      'name', v_product.name,
+      'quantity', v_quantity,
+      'unit_price', v_unit_price,
+      'unit_cost', v_unit_cost
+    );
+    v_total := v_total + v_unit_price * v_quantity;
+    v_total_cost := v_total_cost + v_unit_cost * v_quantity;
+  end loop;
+
+  insert into orders (
+    items, total, total_cost, payment_method, customer_name, customer_phone, note, confirmation_method
+  )
+  values (
+    v_snapshot, v_total, v_total_cost, p_payment_method, p_customer_name, p_customer_phone, p_note,
+    coalesce(p_confirmation_method, 'manual')
+  )
+  returning id into v_order_id;
+
+  return v_order_id;
+end;
+$$;
+
+revoke all on function create_order(jsonb, text, text, text, text, text) from public;
+grant execute on function create_order(jsonb, text, text, text, text, text) to anon, authenticated;
+
+-- Confirma um pedido pendente: o estoque já foi debitado em create_order,
+-- então aqui só grava a venda real em `sales` (reaproveitando o mesmo
+-- snapshot `items` já calculado) e marca o pedido como confirmado. Chamada
+-- hoje pelo botão "Confirmar venda" do admin; no futuro, pelo webhook do
+-- Mercado Pago quando o pagamento for aprovado — mesma função, sem alterar
+-- nada aqui.
+create or replace function confirm_order(p_order_id uuid)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_order orders%rowtype;
+  v_sale_id uuid;
+begin
+  select * into v_order from orders where id = p_order_id for update;
+  if not found then
+    raise exception 'Pedido não encontrado';
+  end if;
+  if v_order.status <> 'pending' then
+    raise exception 'Pedido já foi %', v_order.status;
+  end if;
+
+  insert into sales (items, total, total_cost, payment_method, note)
+  values (
+    v_order.items, v_order.total, v_order.total_cost, v_order.payment_method,
+    coalesce(v_order.note, '') || case
+      when v_order.customer_name is not null then format(' — Cliente: %s (%s)', v_order.customer_name, v_order.customer_phone)
+      else ''
+    end
+  )
+  returning id into v_sale_id;
+
+  update orders
+    set status = 'confirmed', sale_id = v_sale_id, confirmed_at = now()
+    where id = p_order_id;
+
+  return v_sale_id;
+end;
+$$;
+
+revoke all on function confirm_order(uuid) from public;
+grant execute on function confirm_order(uuid) to authenticated;
+
+-- Cancela um pedido pendente e devolve ao estoque (mesma lógica de
+-- delete_sale, só que a partir de `orders`, sem nunca ter existido venda).
+create or replace function cancel_order(p_order_id uuid)
+returns void
+language plpgsql
+as $$
+declare
+  v_order orders%rowtype;
+  v_item jsonb;
+  v_sku_id uuid;
+  v_qty integer;
+begin
+  select * into v_order from orders where id = p_order_id for update;
+  if not found then
+    raise exception 'Pedido não encontrado';
+  end if;
+  if v_order.status <> 'pending' then
+    raise exception 'Pedido já foi %', v_order.status;
+  end if;
+
+  for v_item in select * from jsonb_array_elements(v_order.items) loop
+    v_qty := (v_item->>'quantity')::int;
+    v_sku_id := nullif(v_item->>'sku_id', '')::uuid;
+
+    if v_sku_id is not null then
+      update product_variant_skus set stock_quantity = stock_quantity + v_qty where id = v_sku_id;
+    else
+      update products
+        set stock_quantity = stock_quantity + v_qty,
+            available = (stock_quantity + v_qty) > 0
+        where id = (v_item->>'product_id')::uuid;
+    end if;
+  end loop;
+
+  update orders set status = 'cancelled', cancelled_at = now() where id = p_order_id;
+end;
+$$;
+
+revoke all on function cancel_order(uuid) from public;
+grant execute on function cancel_order(uuid) to authenticated;

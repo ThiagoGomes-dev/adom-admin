@@ -14,7 +14,7 @@ import {
 } from '@/lib/mappers';
 import { extractStoragePath } from '@/lib/storagePath';
 import { cartesianCombos, comboKeyOf } from '@/lib/variantCombos';
-import type { Product, ProductVariantGroup, ProductVariantSku, StockEntry } from '@/types';
+import type { Product, ProductVariantGroup, ProductVariantSku, StockEntry, VariantSkuComboEntry } from '@/types';
 
 export async function listProducts(): Promise<Product[]> {
   const supabase = await createClient();
@@ -217,6 +217,48 @@ export async function restockProductVariants(input: RestockVariantsInput): Promi
   revalidatePath(`/produtos/${input.productId}`);
   revalidatePath('/dashboard');
   return {};
+}
+
+export interface CreateProductWithVariantsInput {
+  product: ProductInput;
+  /** uma linha por combinação do produto cartesiano das variações, com preço opcional */
+  skus: { comboKey: string; combo: VariantSkuComboEntry[]; price?: number; promoPrice?: number }[];
+  /** lote inicial, opcional — pode cadastrar sem estoque e repor depois */
+  restock?: {
+    totalQuantity: number;
+    totalCost: number;
+    allocations: { comboKey: string; quantity: number }[];
+    note?: string;
+  };
+}
+
+/**
+ * Cadastra um produto com variação numa única transação no banco (produto +
+ * SKUs + preço por SKU + lote inicial, quando houver) — substitui a cadeia
+ * createProduct -> listProductVariantSkus -> setVariantSkuPricing ->
+ * restockProductVariants, que fazia isso em 4 chamadas sequenciais sem
+ * transação (uma falha no meio deixava produto/SKU já salvos, sem rollback).
+ */
+export async function createProductWithVariants(input: CreateProductWithVariantsInput): Promise<{ id?: string; error?: string }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('create_product_with_variants', {
+    p_product: productInputToRow(input.product),
+    p_skus: input.skus.map((s) => ({
+      combo_key: s.comboKey,
+      combo: s.combo,
+      price: s.price ?? null,
+      promo_price: s.promoPrice ?? null,
+    })),
+    p_allocations: (input.restock?.allocations ?? []).map((a) => ({ combo_key: a.comboKey, quantity: a.quantity })),
+    p_total_quantity: input.restock?.totalQuantity ?? 0,
+    p_total_cost: input.restock?.totalCost ?? 0,
+    p_note: input.restock?.note || null,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath('/produtos');
+  revalidatePath('/dashboard');
+  return { id: data as string };
 }
 
 export interface VariantSkuPricingEntry {

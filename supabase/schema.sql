@@ -616,9 +616,18 @@ create policy "Authenticated manage orders" on orders for all
 
 create index if not exists orders_status_idx on orders (status, created_at desc);
 
--- Habilita notificação em tempo real (Supabase Realtime) pro admin saber
--- na hora que um pedido novo chegou, sem precisar de infraestrutura extra.
-alter publication supabase_realtime add table orders;
+-- Habilita notificação em tempo real (Supabase Realtime) pro admin saber na
+-- hora que um pedido novo chegou, sem precisar de infraestrutura extra.
+-- `alter publication ... add table` não tem "if not exists", por isso o
+-- bloco condicional abaixo (senão dá erro ao rodar o script de novo).
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'orders'
+  ) then
+    alter publication supabase_realtime add table orders;
+  end if;
+end $$;
 
 -- Replica identity "full": sem isso, o Supabase Realtime só manda a chave
 -- primária no "old" de um UPDATE — e o front precisa saber o status

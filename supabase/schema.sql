@@ -636,6 +636,13 @@ alter table orders replica identity full;
 -- Não aceita nenhum parâmetro que não seja estritamente necessário pro
 -- pedido (sem p_status, sem p_sale_id) — nada que o chamador anônimo passe
 -- pode pular as validações abaixo.
+-- migração: create_order passou a devolver a linha inteira do pedido (em vez
+-- de só o uuid), pra rota da API não precisar de um segundo select (que
+-- falhava: o select avulso roda como anônimo e a RLS de `orders` bloqueia
+-- leitura sem estar autenticado). `create or replace` não permite trocar o
+-- tipo de retorno, por isso o drop abaixo.
+drop function if exists create_order(jsonb, text, text, text, text, text);
+
 create or replace function create_order(
   p_items jsonb, -- [{"product_id": "...", "sku_id": "..."|null, "quantity": int}, ...] já resolvido
   p_payment_method text,
@@ -644,7 +651,7 @@ create or replace function create_order(
   p_note text,
   p_confirmation_method text default 'manual'
 )
-returns uuid
+returns orders
 language plpgsql
 security definer
 set search_path = public
@@ -662,7 +669,7 @@ declare
   v_total numeric(10, 2) := 0;
   v_total_cost numeric(10, 2) := 0;
   v_item_count integer := 0;
-  v_order_id uuid;
+  v_order orders%rowtype;
 begin
   if p_items is null or jsonb_array_length(p_items) = 0 then
     raise exception 'Pedido sem itens';
@@ -743,9 +750,9 @@ begin
     v_snapshot, v_total, v_total_cost, p_payment_method, p_customer_name, p_customer_phone, p_note,
     coalesce(p_confirmation_method, 'manual')
   )
-  returning id into v_order_id;
+  returning * into v_order;
 
-  return v_order_id;
+  return v_order;
 end;
 $$;
 
@@ -755,12 +762,15 @@ grant execute on function create_order(jsonb, text, text, text, text, text) to a
 -- Confirma um pedido pendente: o estoque já foi debitado em create_order,
 -- então aqui só grava a venda real em `sales` (reaproveitando o mesmo
 -- snapshot `items` já calculado) e marca o pedido como confirmado. Chamada
--- hoje pelo botão "Confirmar venda" do admin; no futuro, pelo webhook do
--- Mercado Pago quando o pagamento for aprovado — mesma função, sem alterar
--- nada aqui.
+-- pelo botão "Confirmar venda" do admin (autenticado) E pelo webhook do
+-- Mercado Pago (anônimo, mas só depois de validar a assinatura na rota) —
+-- por isso também é security definer, com grant pra `anon` além de
+-- `authenticated`.
 create or replace function confirm_order(p_order_id uuid)
 returns uuid
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   v_order orders%rowtype;
@@ -793,13 +803,18 @@ end;
 $$;
 
 revoke all on function confirm_order(uuid) from public;
-grant execute on function confirm_order(uuid) to authenticated;
+grant execute on function confirm_order(uuid) to anon, authenticated;
 
 -- Cancela um pedido pendente e devolve ao estoque (mesma lógica de
 -- delete_sale, só que a partir de `orders`, sem nunca ter existido venda).
+-- Mesmo motivo de confirm_order acima: precisa ser chamável pelo webhook
+-- (anônimo) e pela própria rota /api/orders quando a preference do
+-- Mercado Pago falha e o pedido precisa ser desfeito.
 create or replace function cancel_order(p_order_id uuid)
 returns void
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   v_order orders%rowtype;
@@ -834,4 +849,4 @@ end;
 $$;
 
 revoke all on function cancel_order(uuid) from public;
-grant execute on function cancel_order(uuid) to authenticated;
+grant execute on function cancel_order(uuid) to anon, authenticated;

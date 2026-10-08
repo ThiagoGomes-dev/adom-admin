@@ -114,7 +114,12 @@ export async function POST(request: Request) {
     resolvedItems.push({ product_id: product.id, sku_id: skuId, quantity: item.quantity });
   }
 
-  const { data: orderId, error: rpcError } = await supabase.rpc('create_order', {
+  // create_order devolve a linha inteira do pedido já criado (não só o id) —
+  // chamar um select avulso depois pra reler o pedido não funciona aqui,
+  // porque essa rota roda sem sessão (papel anon) e a RLS de `orders` só
+  // libera leitura pra autenticado; a RPC, sendo security definer, não tem
+  // esse problema.
+  const { data: orderRow, error: rpcError } = await supabase.rpc('create_order', {
     p_items: resolvedItems,
     p_payment_method: null,
     p_customer_name: body.customerName.trim(),
@@ -126,25 +131,20 @@ export async function POST(request: Request) {
   if (rpcError) {
     return badRequest(rpcError.message);
   }
+  if (!orderRow) {
+    return withCors(
+      NextResponse.json({ error: 'Pedido criado, mas sem dados pra iniciar o pagamento. Tente novamente.' }, { status: 500 }),
+    );
+  }
+
+  const order = rowToOrder(orderRow as OrderRow);
 
   // O estoque já foi reservado em create_order — agora cria a preference do
   // Checkout Pro pra esse pedido. Se isso falhar (Mercado Pago fora do ar,
   // credencial inválida etc.), cancela o pedido pra devolver o estoque em
   // vez de deixar uma reserva "fantasma" sem ninguém conseguir pagar.
-  const { data: orderRows, error: orderFetchError } = await supabase.from('orders').select('*').eq('id', orderId).limit(1);
-
-  if (orderFetchError || !orderRows || orderRows.length === 0) {
-    await supabase.rpc('cancel_order', { p_order_id: orderId });
-    return withCors(
-      NextResponse.json({ error: 'Pedido criado, mas não foi possível carregá-lo pra iniciar o pagamento. Tente novamente.' }, { status: 500 }),
-    );
-  }
-
-  const order = rowToOrder(orderRows[0] as OrderRow);
-
   try {
-    const { preferenceId, checkoutUrl } = await createPreferenceForOrder(order.id, order.items, shippingCost);
-    await supabase.from('orders').update({ payment_reference: preferenceId }).eq('id', order.id);
+    const { checkoutUrl } = await createPreferenceForOrder(order.id, order.items, shippingCost);
     return withCors(NextResponse.json({ orderId: order.id, checkoutUrl }, { status: 201 }));
   } catch (mpError) {
     await supabase.rpc('cancel_order', { p_order_id: order.id });

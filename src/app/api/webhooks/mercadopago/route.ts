@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { fetchPayment, validateWebhookSignature } from '@/lib/mercadopago';
@@ -19,7 +20,30 @@ export async function POST(request: Request) {
   const xRequestId = request.headers.get('x-request-id');
 
   // DEBUG TEMPORÁRIO: remover depois de descobrir a causa do SignatureMismatch.
-  console.log('Webhook MP debug:', { search: url.search, dataId, xSignature, xRequestId });
+  {
+    const secretRaw = process.env.MP_WEBHOOK_SECRET ?? '';
+    const secretTrimmed = secretRaw.trim();
+    const parts = (xSignature ?? '').split(',').reduce<Record<string, string>>((acc, p) => {
+      const [k, v] = p.split('=');
+      if (k && v) acc[k.trim()] = v.trim();
+      return acc;
+    }, {});
+    const manifest = `id:${dataId ?? ''};request-id:${xRequestId ?? ''};ts:${parts.ts ?? ''};`;
+    const computedRaw = crypto.createHmac('sha256', secretRaw).update(manifest).digest('hex');
+    const computedTrimmed = crypto.createHmac('sha256', secretTrimmed).update(manifest).digest('hex');
+    console.log('Webhook MP debug:', {
+      search: url.search,
+      dataId,
+      xSignature,
+      xRequestId,
+      manifest,
+      receivedHash: parts.v1,
+      secretLength: secretRaw.length,
+      secretTrimmedLength: secretTrimmed.length,
+      matchesRaw: computedRaw === parts.v1,
+      matchesTrimmed: computedTrimmed === parts.v1,
+    });
+  }
 
   try {
     validateWebhookSignature({ xSignature, xRequestId, dataId });

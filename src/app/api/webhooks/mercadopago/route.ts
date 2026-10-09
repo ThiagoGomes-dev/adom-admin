@@ -18,8 +18,18 @@ function isAlreadyProcessedError(message: string): boolean {
 export async function POST(request: Request) {
   const url = new URL(request.url);
   const topic = url.searchParams.get('topic') ?? url.searchParams.get('type');
+
+  // DEBUG temporário — remover depois de confirmar o IPN em produção.
+  console.log('[MP webhook] request recebida', {
+    url: request.url,
+    topic,
+    xSignature: request.headers.get('x-signature'),
+    xRequestId: request.headers.get('x-request-id'),
+  });
+
   if (topic && topic !== 'payment') {
     // merchant_order, chargebacks, etc. — não é o que esse endpoint trata
+    console.log('[MP webhook] ignorado: topic != payment', topic);
     return NextResponse.json({ ok: true });
   }
 
@@ -30,29 +40,34 @@ export async function POST(request: Request) {
   if (xSignature) {
     try {
       validateWebhookSignature({ xSignature, xRequestId, dataId });
+      console.log('[MP webhook] assinatura validada com sucesso');
     } catch (err) {
-      console.error('Webhook do Mercado Pago com assinatura inválida:', err);
+      console.error('[MP webhook] assinatura inválida:', err);
       return NextResponse.json({ error: 'invalid signature' }, { status: 401 });
     }
   }
 
   const body = (await request.json().catch(() => null)) as { data?: { id?: string } } | null;
   const paymentId = dataId ?? body?.data?.id;
+  console.log('[MP webhook] paymentId resolvido', { dataId, bodyDataId: body?.data?.id, paymentId });
   if (!paymentId) {
+    console.error('[MP webhook] sem paymentId — abortando', { url: request.url, body });
     return NextResponse.json({ error: 'missing payment id' }, { status: 400 });
   }
 
   let payment;
   try {
     payment = await fetchPayment(String(paymentId));
+    console.log('[MP webhook] pagamento buscado na API do MP', payment);
   } catch (err) {
-    console.error('Falha ao buscar pagamento no Mercado Pago:', err);
+    console.error('[MP webhook] falha ao buscar pagamento no Mercado Pago:', err);
     return NextResponse.json({ error: 'failed to fetch payment' }, { status: 502 });
   }
 
   const orderId = payment.externalReference;
   if (!orderId) {
     // pagamento sem external_reference não corresponde a nenhum pedido nosso
+    console.log('[MP webhook] pagamento sem external_reference — ignorando');
     return NextResponse.json({ ok: true });
   }
 
@@ -61,15 +76,19 @@ export async function POST(request: Request) {
   if (payment.status === 'approved') {
     const { error } = await supabase.rpc('confirm_order', { p_order_id: orderId });
     if (error && !isAlreadyProcessedError(error.message)) {
-      console.error('Falha ao confirmar pedido via webhook', orderId, error.message);
+      console.error('[MP webhook] falha ao confirmar pedido', orderId, error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    console.log('[MP webhook] confirm_order OK (ou já processado)', orderId, error?.message);
   } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
     const { error } = await supabase.rpc('cancel_order', { p_order_id: orderId });
     if (error && !isAlreadyProcessedError(error.message)) {
-      console.error('Falha ao cancelar pedido via webhook', orderId, error.message);
+      console.error('[MP webhook] falha ao cancelar pedido', orderId, error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    console.log('[MP webhook] cancel_order OK (ou já processado)', orderId, error?.message);
+  } else {
+    console.log('[MP webhook] status ainda não final, nada a fazer', payment.status);
   }
   // 'pending' | 'in_process': nada a fazer ainda — espera o próximo webhook
 

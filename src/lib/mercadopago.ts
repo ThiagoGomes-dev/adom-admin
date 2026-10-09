@@ -99,6 +99,13 @@ export function validateWebhookSignature(params: {
   if (!secret) {
     throw new Error('MP_WEBHOOK_SECRET não configurado.');
   }
+  // DEBUG temporário — nunca loga o segredo inteiro, só o suficiente pra
+  // detectar espaço/quebra de linha sobrando ou valor truncado.
+  console.log('[MP webhook] secret debug', {
+    length: secret.length,
+    preview: `${secret.slice(0, 4)}...${secret.slice(-4)}`,
+    hasWhitespace: /\s/.test(secret),
+  });
   WebhookSignatureValidator.validate({
     xSignature: params.xSignature,
     xRequestId: params.xRequestId,

@@ -18,6 +18,9 @@ export async function POST(request: Request) {
   const xSignature = request.headers.get('x-signature');
   const xRequestId = request.headers.get('x-request-id');
 
+  // DEBUG TEMPORÁRIO: remover depois de descobrir a causa do SignatureMismatch.
+  console.log('Webhook MP debug:', { search: url.search, dataId, xSignature, xRequestId });
+
   try {
     validateWebhookSignature({ xSignature, xRequestId, dataId });
   } catch (err) {

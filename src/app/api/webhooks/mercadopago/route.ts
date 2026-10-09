@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { fetchPayment, validateWebhookSignature } from '@/lib/mercadopago';
@@ -10,46 +9,31 @@ function isAlreadyProcessedError(message: string): boolean {
 
 /**
  * Webhook do Mercado Pago — avisa quando um pagamento muda de status.
- * Nunca confia no corpo da notificação: valida a assinatura e depois busca
- * o pagamento de verdade na API antes de agir. Server-to-server (sem CORS).
+ * Nunca confia no corpo da notificação: quando vem assinatura (Webhooks v2),
+ * ela precisa ser válida; notificações IPN legadas não trazem x-signature,
+ * então nesse caso a verificação real fica só por conta do passo seguinte,
+ * que busca o pagamento de verdade na API antes de agir. Server-to-server
+ * (sem CORS).
  */
 export async function POST(request: Request) {
   const url = new URL(request.url);
+  const topic = url.searchParams.get('topic') ?? url.searchParams.get('type');
+  if (topic && topic !== 'payment') {
+    // merchant_order, chargebacks, etc. — não é o que esse endpoint trata
+    return NextResponse.json({ ok: true });
+  }
+
   const dataId = url.searchParams.get('data.id') ?? url.searchParams.get('id');
   const xSignature = request.headers.get('x-signature');
   const xRequestId = request.headers.get('x-request-id');
 
-  // DEBUG TEMPORÁRIO: remover depois de descobrir a causa do SignatureMismatch.
-  {
-    const secretRaw = process.env.MP_WEBHOOK_SECRET ?? '';
-    const secretTrimmed = secretRaw.trim();
-    const parts = (xSignature ?? '').split(',').reduce<Record<string, string>>((acc, p) => {
-      const [k, v] = p.split('=');
-      if (k && v) acc[k.trim()] = v.trim();
-      return acc;
-    }, {});
-    const manifest = `id:${dataId ?? ''};request-id:${xRequestId ?? ''};ts:${parts.ts ?? ''};`;
-    const computedRaw = crypto.createHmac('sha256', secretRaw).update(manifest).digest('hex');
-    const computedTrimmed = crypto.createHmac('sha256', secretTrimmed).update(manifest).digest('hex');
-    console.log('Webhook MP debug:', {
-      search: url.search,
-      dataId,
-      xSignature,
-      xRequestId,
-      manifest,
-      receivedHash: parts.v1,
-      secretLength: secretRaw.length,
-      secretTrimmedLength: secretTrimmed.length,
-      matchesRaw: computedRaw === parts.v1,
-      matchesTrimmed: computedTrimmed === parts.v1,
-    });
-  }
-
-  try {
-    validateWebhookSignature({ xSignature, xRequestId, dataId });
-  } catch (err) {
-    console.error('Webhook do Mercado Pago com assinatura inválida:', err);
-    return NextResponse.json({ error: 'invalid signature' }, { status: 401 });
+  if (xSignature) {
+    try {
+      validateWebhookSignature({ xSignature, xRequestId, dataId });
+    } catch (err) {
+      console.error('Webhook do Mercado Pago com assinatura inválida:', err);
+      return NextResponse.json({ error: 'invalid signature' }, { status: 401 });
+    }
   }
 
   const body = (await request.json().catch(() => null)) as { data?: { id?: string } } | null;

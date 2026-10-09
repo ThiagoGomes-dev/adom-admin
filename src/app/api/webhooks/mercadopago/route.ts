@@ -20,6 +20,7 @@ export async function POST(request: Request) {
   const topic = url.searchParams.get('topic') ?? url.searchParams.get('type');
 
   // DEBUG temporário — remover depois de confirmar o IPN em produção.
+  // (force redeploy: garantir que MP_WEBHOOK_SECRET novo entra no build)
   console.log('[MP webhook] request recebida', {
     url: request.url,
     topic,

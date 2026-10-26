@@ -859,3 +859,25 @@ $$;
 
 revoke all on function cancel_order(uuid) from public;
 grant execute on function cancel_order(uuid) to anon, authenticated;
+
+-- migração (segurança): confirm_order/cancel_order NÃO podem ser chamáveis
+-- pelo papel `anon`. A chave publishable é pública (vai no JS do painel), e
+-- com ela qualquer um chamava `POST /rest/v1/rpc/confirm_order` com o id do
+-- próprio pedido (que o site recebe de volta em /api/orders) e marcava como
+-- pago sem pagar. Agora só o admin logado (`authenticated`) e o servidor
+-- com a chave secreta (`service_role`: webhook, rollback de /api/orders e
+-- cron de expiração) chamam essas duas funções.
+revoke execute on function confirm_order(uuid) from anon;
+revoke execute on function cancel_order(uuid) from anon;
+grant execute on function confirm_order(uuid) to authenticated, service_role;
+grant execute on function cancel_order(uuid) to authenticated, service_role;
+
+-- migração: entrega/retirada, frete e meio de pagamento do Mercado Pago no pedido
+
+alter table orders add column if not exists delivery_method text
+  check (delivery_method in ('delivery', 'pickup')); -- null em pedidos antigos / feitos no painel
+alter table orders add column if not exists shipping_cost numeric(10, 2) not null default 0;
+alter table orders add column if not exists delivery_cep text;
+alter table orders add column if not exists mp_payment_type text;   -- credit_card | debit_card | bank_transfer (Pix) | account_money ...
+alter table orders add column if not exists mp_payment_method text; -- visa | master | pix ...
+alter table orders add column if not exists mp_installments integer;

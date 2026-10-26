@@ -45,3 +45,33 @@ webhooks desse usuário são assinados com o segredo da aplicação do usuário 
 
 Enquanto isso não for resolvido, `MP_WEBHOOK_SIGNATURE_MODE=log` é seguro: nenhuma decisão usa
 dados da notificação, só o que a API do MP devolve com o nosso token.
+
+## Ambiente de teste (compra e pagamento de ponta a ponta)
+
+No Checkout Pro o "teste" não usa as credenciais `TEST-...`: usa **usuários de teste**.
+
+1. Na sua conta real: Mercado Pago Developers → Suas integrações → sua aplicação → **Contas de teste**.
+   Crie dois usuários (país Brasil): **Vendedor** e **Comprador**. Anote usuário/senha de cada um.
+2. Numa janela anônima, entre em mercadopago.com.br/developers **com o usuário Vendedor de teste**, crie
+   uma aplicação (Checkout Pro) e copie as **credenciais de produção** dela (`APP_USR-...`). Esse é o
+   `MP_ACCESS_TOKEN` de teste. (O token do `.env.local` local já é de um vendedor de teste.)
+3. Ainda logado como Vendedor de teste: na aplicação dele → **Webhooks → Configurar notificações**,
+   URL `https://<admin-de-teste>/api/webhooks/mercadopago`, evento **Pagamentos**, salve e copie a
+   **assinatura secreta** → `MP_WEBHOOK_SECRET`. O segredo tem que ser da MESMA aplicação do token —
+   misturar token do vendedor de teste com segredo da conta real faz a assinatura nunca conferir.
+4. O MP não alcança `localhost`. Opções: um deploy de Preview na Vercel (com as variáveis no escopo
+   **Preview** e `ADMIN_URL` = URL do preview) **com Deployment Protection desligada** para o
+   preview — senão a Vercel responde 401 ao MP antes de chegar no código; ou um túnel (ngrok/cloudflared)
+   para o `next dev` local.
+5. `STOREFRONT_URL` = URL do site que vai receber o cliente de volta; no site, `VITE_ADMIN_API_URL`
+   apontando para o admin de teste.
+6. Compre pelo site, abra o link de pagamento numa janela anônima e **entre com o usuário Comprador de
+   teste**. Cartão de teste Mastercard `5031 4332 1540 6351`, CVV `123`, validade `11/30`, CPF
+   `12345678909`. O nome do titular define o resultado: `APRO` aprovado, `OTHE` recusado, `CONT` pendente.
+7. O que conferir: ao criar o pedido o estoque da variação já cai (reserva) e o pedido aparece
+   **pendente** no painel; com `APRO`, em segundos o pedido vira **confirmado** e aparece em Vendas;
+   com `OTHE` continua pendente (o cliente pode tentar de novo); nos logs da Vercel aparece
+   `[MP webhook] pedido confirmado`.
+
+Atenção: o banco é o mesmo Supabase de produção, então pedidos de teste baixam estoque de verdade.
+Cancele-os no painel depois (devolve o estoque) ou use um projeto Supabase separado para teste.

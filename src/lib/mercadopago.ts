@@ -9,6 +9,16 @@ function getConfig(): MercadoPagoConfig {
   return new MercadoPagoConfig({ accessToken });
 }
 
+/**
+ * Por quanto tempo o link do Checkout Pro fica válido depois de criado. O
+ * estoque fica reservado nesse meio-tempo — passou disso sem pagamento, o
+ * cron `/api/cron/expire-orders` cancela o pedido e devolve o estoque.
+ */
+export function getPaymentWindowMinutes(): number {
+  const value = Number(process.env.MP_PAYMENT_WINDOW_MINUTES);
+  return Number.isFinite(value) && value > 0 ? value : 60;
+}
+
 export interface CreatedPreference {
   preferenceId: string;
   checkoutUrl: string;
@@ -51,6 +61,12 @@ export async function createPreferenceForOrder(
     });
   }
 
+  // Link e Pix expiram junto com a reserva de estoque. Boleto fica de fora:
+  // leva até 3 dias úteis pra compensar, e o estoque não pode ficar preso
+  // esse tempo todo (nem o pedido ser cancelado com o boleto ainda válido).
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + getPaymentWindowMinutes() * 60_000);
+
   const preference = new Preference(getConfig());
   const response = await preference.create({
     body: {
@@ -63,6 +79,13 @@ export async function createPreferenceForOrder(
         failure: `${storefrontUrl}/pedido/falha?order=${orderId}`,
       },
       auto_return: 'approved',
+      expires: true,
+      expiration_date_from: now.toISOString(),
+      expiration_date_to: expiresAt.toISOString(),
+      date_of_expiration: expiresAt.toISOString(),
+      payment_methods: {
+        excluded_payment_types: [{ id: 'ticket' }],
+      },
     },
   });
 
@@ -74,8 +97,17 @@ export async function createPreferenceForOrder(
 }
 
 export interface MpPaymentResult {
+  id: string;
   status: string | undefined;
+  statusDetail: string | undefined;
   externalReference: string | undefined;
+  transactionAmount: number | undefined;
+  currencyId: string | undefined;
+  /** tipo: 'credit_card' | 'debit_card' | 'bank_transfer' (Pix) | 'account_money' | ... */
+  paymentTypeId: string | undefined;
+  /** bandeira/meio: 'visa' | 'master' | 'pix' | ... */
+  paymentMethodId: string | undefined;
+  installments: number | undefined;
 }
 
 /**
@@ -86,7 +118,28 @@ export interface MpPaymentResult {
 export async function fetchPayment(paymentId: string): Promise<MpPaymentResult> {
   const payment = new Payment(getConfig());
   const response = await payment.get({ id: paymentId });
-  return { status: response.status, externalReference: response.external_reference };
+  return {
+    id: String(response.id ?? paymentId),
+    status: response.status,
+    statusDetail: response.status_detail,
+    externalReference: response.external_reference,
+    transactionAmount: response.transaction_amount,
+    currencyId: response.currency_id,
+    paymentTypeId: response.payment_type_id,
+    paymentMethodId: response.payment_method_id,
+    installments: response.installments,
+  };
+}
+
+/**
+ * Pagamentos já feitos pra um pedido (via `external_reference`) — usado pelo
+ * cron de expiração pra nunca cancelar um pedido que tem pagamento aprovado
+ * ou ainda em análise e só não teve o webhook processado.
+ */
+export async function searchPaymentsForOrder(orderId: string): Promise<{ id: string; status: string | undefined }[]> {
+  const payment = new Payment(getConfig());
+  const response = await payment.search({ options: { external_reference: orderId } });
+  return (response.results ?? []).map((p) => ({ id: String(p.id), status: p.status }));
 }
 
 /** Valida a assinatura do webhook (`x-signature`/`x-request-id`) contra `MP_WEBHOOK_SECRET`. Lança se inválida. */
@@ -99,17 +152,14 @@ export function validateWebhookSignature(params: {
   if (!secret) {
     throw new Error('MP_WEBHOOK_SECRET não configurado.');
   }
-  // DEBUG temporário — nunca loga o segredo inteiro, só o suficiente pra
-  // detectar espaço/quebra de linha sobrando ou valor truncado.
-  console.log('[MP webhook] secret debug', {
-    length: secret.length,
-    preview: `${secret.slice(0, 4)}...${secret.slice(-4)}`,
-    hasWhitespace: /\s/.test(secret),
-  });
   WebhookSignatureValidator.validate({
     xSignature: params.xSignature,
     xRequestId: params.xRequestId,
-    dataId: params.dataId,
-    secret,
+    // a doc do Mercado Pago pede o data.id em minúsculas quando é alfanumérico
+    dataId: params.dataId?.toLowerCase() ?? null,
+    secret: secret.trim(),
+    // sem toleranceSeconds de propósito: replay de notificação velha não faz
+    // estrago (o webhook sempre relê o pagamento na API e só age se o pedido
+    // ainda estiver pendente), e não há garantia de que o `ts` muda nos retries.
   });
 }

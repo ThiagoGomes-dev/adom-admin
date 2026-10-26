@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/api/categories',
   '/api/orders',
   '/api/webhooks/mercadopago',
+  '/api/cron', // protegido pelo CRON_SECRET dentro da própria rota
 ];
 
 function isPublicPath(pathname: string) {

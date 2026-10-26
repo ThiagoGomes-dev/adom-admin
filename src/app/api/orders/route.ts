@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveSkuId } from '@/lib/orderResolution';
 import { createPreferenceForOrder } from '@/lib/mercadopago';
 import { rowToOrder, type OrderRow, type ProductRow, type ProductVariantSkuRow } from '@/lib/mappers';
@@ -147,7 +148,8 @@ export async function POST(request: Request) {
     const { checkoutUrl } = await createPreferenceForOrder(order.id, order.items, shippingCost);
     return withCors(NextResponse.json({ orderId: order.id, checkoutUrl }, { status: 201 }));
   } catch (mpError) {
-    await supabase.rpc('cancel_order', { p_order_id: order.id });
+    // cancel_order não é mais liberado pro papel anônimo — rollback com a chave secreta
+    await createAdminClient().rpc('cancel_order', { p_order_id: order.id });
     const message = mpError instanceof Error ? mpError.message : 'Não foi possível iniciar o pagamento.';
     return withCors(NextResponse.json({ error: `Não foi possível iniciar o pagamento: ${message}` }, { status: 502 }));
   }

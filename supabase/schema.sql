@@ -859,3 +859,15 @@ $$;
 
 revoke all on function cancel_order(uuid) from public;
 grant execute on function cancel_order(uuid) to anon, authenticated;
+
+-- migração (segurança): confirm_order/cancel_order NÃO podem ser chamáveis
+-- pelo papel `anon`. A chave publishable é pública (vai no JS do painel), e
+-- com ela qualquer um chamava `POST /rest/v1/rpc/confirm_order` com o id do
+-- próprio pedido (que o site recebe de volta em /api/orders) e marcava como
+-- pago sem pagar. Agora só o admin logado (`authenticated`) e o servidor
+-- com a chave secreta (`service_role`: webhook, rollback de /api/orders e
+-- cron de expiração) chamam essas duas funções.
+revoke execute on function confirm_order(uuid) from anon;
+revoke execute on function cancel_order(uuid) from anon;
+grant execute on function confirm_order(uuid) to authenticated, service_role;
+grant execute on function cancel_order(uuid) to authenticated, service_role;

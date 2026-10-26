@@ -26,9 +26,20 @@
    - `CRON_SECRET` — string aleatória longa.
    - `MP_WEBHOOK_SIGNATURE_MODE=log` enquanto a assinatura não conferir (ver abaixo).
    - Conferir `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `ADMIN_URL`, `STOREFRONT_URL`.
-2. Fazer merge da branch `feat/mp-webhook-hardening` (deploy).
-3. **Supabase → SQL Editor:** rodar `supabase/migrations/2026-10-26_revoke_anon_order_rpcs.sql`.
-4. Fazer um pagamento de teste e conferir o pedido virando "confirmado" no painel e nos logs da Vercel.
+2. **Supabase → SQL Editor:** rodar `supabase/migrations/2026-10-26_order_delivery_and_payment.sql`
+   (colunas de entrega/frete/meio de pagamento — o admin novo grava nelas).
+3. Fazer merge da branch `feat/mp-webhook-hardening` do admin (deploy).
+4. Fazer merge da branch `feat/retirada-na-loja` do site (deploy). O admin novo exige
+   `deliveryMethod` no pedido, então o site antigo recebe erro até este passo.
+5. **Supabase → SQL Editor:** rodar `supabase/migrations/2026-10-26_revoke_anon_order_rpcs.sql`.
+6. Pagamentos de teste (um com entrega, um com retirada) e conferir o pedido virando "confirmado"
+   no painel, com frete e forma de pagamento preenchidos.
+
+## Frete
+
+Calculado no servidor (`src/lib/shipping.ts`): retirada na loja = 0; Campina Grande = R$ 12;
+outras cidades = R$ 49,90; grátis com R$ 399,90 ou mais em produtos. A cidade vem do CEP via
+ViaCEP. O site tem uma cópia da regra só para exibir — mudou aqui, mude lá também.
 
 ## Por que a assinatura não confere
 

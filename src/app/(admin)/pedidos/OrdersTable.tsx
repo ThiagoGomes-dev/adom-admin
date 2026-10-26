@@ -1,14 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, X, Truck, Search } from 'lucide-react';
+import { Check, X, Truck, Search, Eye } from 'lucide-react';
 import type { Order } from '@/types';
 import { formatPrice } from '@/lib/currency';
 import { cn } from '@/lib/cn';
 import { Pagination, usePagination } from '@/components/ui/Pagination';
 import { card } from '@/components/ui/PageHeader';
 import { confirmOrder, cancelOrder, markOrderShipped } from './actions';
+import { OrderDetailsModal } from './OrderDetailsModal';
 
 const PAYMENT_LABELS: Record<string, string> = {
   pix: 'Pix',
@@ -44,6 +45,9 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tab, setTab] = useState<OrderStage | 'all'>('all');
   const [search, setSearch] = useState('');
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+  const detailsOrder = orders.find((o) => o.id === detailsId);
+  const closeDetails = useCallback(() => setDetailsId(null), []);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -176,7 +180,13 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
                     </td>
                     <td className="px-3 py-4">
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-semibold text-ink">{order.customerName || '—'}</span>
+                        <button
+                          type="button"
+                          onClick={() => setDetailsId(order.id)}
+                          className="w-fit text-left font-semibold text-ink hover:text-bronze-text hover:underline"
+                        >
+                          {order.customerName || '—'}
+                        </button>
                         {phoneDigits && (
                           <a
                             href={`https://wa.me/${phoneDigits}`}
@@ -210,6 +220,16 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDetailsId(order.id)}
+                        title="Ver detalhes do pedido"
+                        aria-label={`Ver detalhes do pedido de ${order.customerName || 'cliente'}`}
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-line bg-white text-slate-600 hover:bg-slate-100 hover:text-ink"
+                      >
+                        <Eye size={16} />
+                      </button>
                       {stage === 'pending' ? (
                         <div className="flex items-center justify-end gap-2">
                           <button
@@ -248,6 +268,7 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -271,6 +292,15 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
           itemLabel="pedidos"
         />
       </div>
+
+      {detailsOrder && (
+        <OrderDetailsModal
+          order={detailsOrder}
+          stageLabel={STAGE_BADGE[stageOf(detailsOrder)].label}
+          stageClassName={STAGE_BADGE[stageOf(detailsOrder)].className}
+          onClose={closeDetails}
+        />
+      )}
     </div>
   );
 }

@@ -103,6 +103,11 @@ export interface MpPaymentResult {
   externalReference: string | undefined;
   transactionAmount: number | undefined;
   currencyId: string | undefined;
+  /** tipo: 'credit_card' | 'debit_card' | 'bank_transfer' (Pix) | 'account_money' | ... */
+  paymentTypeId: string | undefined;
+  /** bandeira/meio: 'visa' | 'master' | 'pix' | ... */
+  paymentMethodId: string | undefined;
+  installments: number | undefined;
 }
 
 /**
@@ -120,6 +125,9 @@ export async function fetchPayment(paymentId: string): Promise<MpPaymentResult> 
     externalReference: response.external_reference,
     transactionAmount: response.transaction_amount,
     currencyId: response.currency_id,
+    paymentTypeId: response.payment_type_id,
+    paymentMethodId: response.payment_method_id,
+    installments: response.installments,
   };
 }
 

@@ -20,6 +20,17 @@ function signatureMode(): 'enforce' | 'log' {
   return process.env.MP_WEBHOOK_SIGNATURE_MODE === 'log' ? 'log' : 'enforce';
 }
 
+/**
+ * Traduz o meio de pagamento do MP pro `PaymentMethod` do painel ('pix' |
+ * 'credito' | 'dinheiro'). Débito, saldo em conta etc. não têm equivalente —
+ * ficam `null` aqui, mas o valor exato fica em mp_payment_type/mp_payment_method.
+ */
+function toPanelPaymentMethod(typeId: string | undefined, methodId: string | undefined): string | null {
+  if (methodId === 'pix' || typeId === 'bank_transfer') return 'pix';
+  if (typeId === 'credit_card') return 'credito';
+  return null;
+}
+
 /** Erro 404 da API do MP = id de pagamento que não é da nossa conta (ou inventado). */
 function isNotFound(err: unknown): boolean {
   return (err as { status?: number })?.status === 404;
@@ -95,7 +106,7 @@ export async function POST(request: Request) {
   const supabase = createAdminClient();
   const { data: order, error: orderError } = await supabase
     .from('orders')
-    .select('id, status, total, payment_reference, note')
+    .select('id, status, total, shipping_cost, payment_reference, note')
     .eq('id', orderId)
     .maybeSingle();
 
@@ -132,9 +143,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, attention: 'paid_after_cancel' });
     }
 
-    // Confere o valor: o pago tem que cobrir pelo menos o total dos produtos
-    // (o frete entra por cima, como item à parte na preference).
-    const expected = Number(order.total);
+    // Confere o valor: o pago tem que cobrir produtos + frete (o frete entra
+    // como item à parte na preference e fica gravado em shipping_cost).
+    const expected = Number(order.total) + Number(order.shipping_cost ?? 0);
     if (payment.currencyId !== 'BRL' || (payment.transactionAmount ?? 0) + 0.01 < expected) {
       console.error('[MP webhook] valor/moeda do pagamento não confere com o pedido — não confirmado', {
         ...log,
@@ -145,12 +156,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, attention: 'amount_mismatch' });
     }
 
+    // Grava antes de confirmar: confirm_order copia orders.payment_method pra
+    // venda, e é isso que aparece na coluna "Pagamento" do painel.
+    await supabase
+      .from('orders')
+      .update({ payment_method: toPanelPaymentMethod(payment.paymentTypeId, payment.paymentMethodId) })
+      .eq('id', orderId)
+      .eq('status', 'pending');
+
     const { error } = await supabase.rpc('confirm_order', { p_order_id: orderId });
     if (error && !isAlreadyProcessedError(error.message)) {
       console.error('[MP webhook] falha ao confirmar pedido', { ...log, message: error.message });
       return NextResponse.json({ error: 'confirm failed' }, { status: 500 });
     }
-    await supabase.from('orders').update({ payment_reference: payment.id }).eq('id', orderId);
+    await supabase
+      .from('orders')
+      .update({
+        payment_reference: payment.id,
+        mp_payment_type: payment.paymentTypeId ?? null,
+        mp_payment_method: payment.paymentMethodId ?? null,
+        mp_installments: payment.installments ?? null,
+      })
+      .eq('id', orderId);
     console.log('[MP webhook] pedido confirmado', log);
     return NextResponse.json({ ok: true });
   }

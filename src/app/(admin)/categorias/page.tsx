@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/ui/PageHeader';
 import { listCategories } from './actions';
 import { CategoriesManager } from './CategoriesManager';
 
@@ -6,8 +7,11 @@ export default async function CategoriasPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">Categorias</h1>
-      <p className="mt-1 text-sm text-slate-500">Organize os produtos por categoria (ex: Camisetas, Regatas).</p>
+      <PageHeader
+        eyebrow="Catálogo"
+        title="Categorias"
+        description="Organize os produtos por categoria (ex: Camisetas, Regatas)."
+      />
 
       <div className="mt-6">
         <CategoriesManager initialCategories={categories} />

@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/ui/PageHeader';
 import { listOrders } from './actions';
 import { OrdersTable } from './OrdersTable';
 
@@ -7,13 +8,16 @@ export default async function PedidosPage() {
 
   return (
     <div>
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Pedidos</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {pendingCount} pedido{pendingCount === 1 ? '' : 's'} pendente{pendingCount === 1 ? '' : 's'} · {orders.length}{' '}
-          no total
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Loja virtual"
+        title="Pedidos"
+        description={
+          <>
+            {pendingCount} pedido{pendingCount === 1 ? '' : 's'} aguardando pagamento · {orders.length} no total. Os pagos
+            pelo Mercado Pago entram como confirmados automaticamente.
+          </>
+        }
+      />
 
       <OrdersTable initialOrders={orders} />
     </div>

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveSkuId } from '@/lib/orderResolution';
 import { createPreferenceForOrder } from '@/lib/mercadopago';
+import { computeShippingCost, lookupCepCity, type DeliveryMethod } from '@/lib/shipping';
 import { rowToOrder, type OrderRow, type ProductRow, type ProductVariantSkuRow } from '@/lib/mappers';
 
 const ALLOWED_ORIGIN = process.env.STOREFRONT_ORIGIN ?? '*';
@@ -10,7 +11,6 @@ const ALLOWED_ORIGIN = process.env.STOREFRONT_ORIGIN ?? '*';
 const MAX_ITEMS = 30;
 const MAX_QTY_PER_ITEM = 50;
 const MAX_TOTAL_QTY = 200;
-const MAX_SHIPPING_COST = 500;
 
 function withCors(response: NextResponse) {
   response.headers.set('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
@@ -31,8 +31,10 @@ interface OrderItemInput {
 
 interface CreateOrderBody {
   items: OrderItemInput[];
-  /** frete em reais — a forma de pagamento em si é escolhida no próprio Checkout Pro do Mercado Pago. */
-  shippingCost?: number;
+  /** entrega no endereço ou retirada na loja — o frete é calculado aqui, nunca aceito do navegador */
+  deliveryMethod?: DeliveryMethod;
+  /** CEP de entrega (só dígitos ou 00000-000); obrigatório quando `deliveryMethod` é 'delivery' */
+  cep?: string;
   customerName?: string;
   customerPhone?: string;
   note?: string;
@@ -44,6 +46,8 @@ interface CreateOrderBody {
  * `create_order`, security definer no banco). Preço e sku_id NUNCA são
  * aceitos do corpo da requisição: sempre recalculados aqui a partir do
  * banco, pra ninguém manipular o fetch do navegador e mandar preço zero.
+ * O frete segue a mesma regra: calculado aqui (src/lib/shipping.ts) a partir
+ * do tipo de entrega, da cidade do CEP e do subtotal.
  */
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as CreateOrderBody | null;
@@ -72,9 +76,26 @@ export async function POST(request: Request) {
     return badRequest('Pedido excede o limite de itens permitido.');
   }
 
-  const shippingCost = body.shippingCost ?? 0;
-  if (!Number.isFinite(shippingCost) || shippingCost < 0 || shippingCost > MAX_SHIPPING_COST) {
-    return badRequest('Valor de frete inválido.');
+  const deliveryMethod = body.deliveryMethod;
+  if (deliveryMethod !== 'delivery' && deliveryMethod !== 'pickup') {
+    return badRequest('Escolha entre entrega e retirada na loja (atualize a página e tente de novo).');
+  }
+  const cepDigits = (body.cep ?? '').replace(/\D/g, '');
+  let deliveryCity: string | null = null;
+  if (deliveryMethod === 'delivery') {
+    if (cepDigits.length !== 8) {
+      return badRequest('CEP de entrega inválido.');
+    }
+    try {
+      deliveryCity = await lookupCepCity(cepDigits);
+    } catch {
+      return withCors(
+        NextResponse.json({ error: 'Não foi possível consultar o CEP agora. Tente novamente em instantes.' }, { status: 502 }),
+      );
+    }
+    if (!deliveryCity) {
+      return badRequest('CEP não encontrado — confira e tente novamente.');
+    }
   }
 
   const phoneDigits = (body.customerPhone ?? '').replace(/\D/g, '');
@@ -139,6 +160,24 @@ export async function POST(request: Request) {
   }
 
   const order = rowToOrder(orderRow as OrderRow);
+  const shippingCost = computeShippingCost({ method: deliveryMethod, city: deliveryCity, subtotal: order.total });
+  // update em orders e cancel_order não são liberados pro papel anônimo — usa a chave secreta
+  const admin = createAdminClient();
+
+  const { error: deliveryError } = await admin
+    .from('orders')
+    .update({
+      delivery_method: deliveryMethod,
+      shipping_cost: shippingCost,
+      delivery_cep: deliveryMethod === 'delivery' ? cepDigits : null,
+    })
+    .eq('id', order.id);
+  if (deliveryError) {
+    await admin.rpc('cancel_order', { p_order_id: order.id });
+    return withCors(
+      NextResponse.json({ error: 'Não foi possível registrar a entrega do pedido. Tente novamente.' }, { status: 500 }),
+    );
+  }
 
   // O estoque já foi reservado em create_order — agora cria a preference do
   // Checkout Pro pra esse pedido. Se isso falhar (Mercado Pago fora do ar,
@@ -146,10 +185,9 @@ export async function POST(request: Request) {
   // vez de deixar uma reserva "fantasma" sem ninguém conseguir pagar.
   try {
     const { checkoutUrl } = await createPreferenceForOrder(order.id, order.items, shippingCost);
-    return withCors(NextResponse.json({ orderId: order.id, checkoutUrl }, { status: 201 }));
+    return withCors(NextResponse.json({ orderId: order.id, checkoutUrl, shippingCost }, { status: 201 }));
   } catch (mpError) {
-    // cancel_order não é mais liberado pro papel anônimo — rollback com a chave secreta
-    await createAdminClient().rpc('cancel_order', { p_order_id: order.id });
+    await admin.rpc('cancel_order', { p_order_id: order.id });
     const message = mpError instanceof Error ? mpError.message : 'Não foi possível iniciar o pagamento.';
     return withCors(NextResponse.json({ error: `Não foi possível iniciar o pagamento: ${message}` }, { status: 502 }));
   }

@@ -148,6 +148,12 @@ export interface OrderRow {
   confirmed_at: string | null;
   cancelled_at: string | null;
   shipped_at: string | null;
+  delivery_method?: string | null;
+  shipping_cost?: number | string | null;
+  delivery_cep?: string | null;
+  mp_payment_type?: string | null;
+  mp_payment_method?: string | null;
+  mp_installments?: number | null;
 }
 
 export function rowToOrder(row: OrderRow): Order {
@@ -176,6 +182,12 @@ export function rowToOrder(row: OrderRow): Order {
     confirmedAt: row.confirmed_at ?? undefined,
     cancelledAt: row.cancelled_at ?? undefined,
     shippedAt: row.shipped_at ?? undefined,
+    deliveryMethod: row.delivery_method === 'delivery' || row.delivery_method === 'pickup' ? row.delivery_method : undefined,
+    shippingCost: Number(row.shipping_cost ?? 0),
+    deliveryCep: row.delivery_cep ?? undefined,
+    mpPaymentType: row.mp_payment_type ?? undefined,
+    mpPaymentMethod: row.mp_payment_method ?? undefined,
+    mpInstallments: row.mp_installments ?? undefined,
   };
 }
 

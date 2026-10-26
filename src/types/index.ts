@@ -96,6 +96,15 @@ export interface Order {
   cancelledAt?: string;
   /** preenchido quando o admin marca que o pedido foi enviado — confirmado + sem isso = "pago, aguardando envio" */
   shippedAt?: string;
+  /** 'delivery' (entrega no CEP) | 'pickup' (retirada na loja) — ausente em pedidos antigos */
+  deliveryMethod?: 'delivery' | 'pickup';
+  /** frete cobrado no Mercado Pago, à parte do `total` dos produtos */
+  shippingCost: number;
+  deliveryCep?: string;
+  /** como o cliente pagou no Mercado Pago (payment_type_id/payment_method_id/parcelas) */
+  mpPaymentType?: string;
+  mpPaymentMethod?: string;
+  mpInstallments?: number;
 }
 
 /** Uma reposição de estoque — registrada ao repor um produto, guarda o custo daquela leva. */

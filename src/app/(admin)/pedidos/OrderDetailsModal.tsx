@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { X, MapPin, User, CreditCard, Package, Clock, MessageCircle } from 'lucide-react';
+import { X, MapPin, User, CreditCard, Package, Clock, MessageCircle, Store } from 'lucide-react';
 import type { Order } from '@/types';
 import { formatPrice } from '@/lib/currency';
 import { cn } from '@/lib/cn';
@@ -33,6 +33,45 @@ function splitNote(note?: string) {
   const shipping = lines.find((l) => l.toLowerCase().startsWith('frete:'));
   const address = lines.filter((l) => l !== shipping);
   return { address, shipping: shipping?.replace(/^frete:\s*/i, '') };
+}
+
+/** payment_type_id do Mercado Pago → rótulo; bank_transfer é o Pix. */
+const MP_PAYMENT_TYPES: Record<string, string> = {
+  credit_card: 'Cartão de crédito',
+  debit_card: 'Cartão de débito',
+  prepaid_card: 'Cartão pré-pago',
+  bank_transfer: 'Pix',
+  account_money: 'Saldo do Mercado Pago',
+  ticket: 'Boleto',
+};
+
+/** payment_method_id do Mercado Pago (bandeira) → rótulo. */
+const MP_PAYMENT_METHODS: Record<string, string> = {
+  visa: 'Visa',
+  master: 'Mastercard',
+  amex: 'American Express',
+  elo: 'Elo',
+  hipercard: 'Hipercard',
+  debvisa: 'Visa',
+  debmaster: 'Mastercard',
+  debelo: 'Elo',
+};
+
+/** Como o cliente pagou: dados do Mercado Pago quando existem, senão o que o pedido antigo tiver. */
+function paymentLabel(order: Order) {
+  if (order.mpPaymentType) {
+    const type = MP_PAYMENT_TYPES[order.mpPaymentType] ?? order.mpPaymentType;
+    const isCard = order.mpPaymentType.endsWith('_card');
+    const brand = isCard && order.mpPaymentMethod ? MP_PAYMENT_METHODS[order.mpPaymentMethod] ?? order.mpPaymentMethod : null;
+    const installments =
+      order.mpPaymentType === 'credit_card' && order.mpInstallments && order.mpInstallments > 1
+        ? `em ${order.mpInstallments}x`
+        : null;
+    return [type, brand, installments].filter(Boolean).join(' · ');
+  }
+  if (order.paymentMethod) return PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod;
+  if (order.confirmationMethod === 'mercado_pago' || order.paymentReference) return 'Mercado Pago';
+  return 'Não informado';
 }
 
 function Section({ icon: Icon, title, children }: { icon: typeof User; title: string; children: React.ReactNode }) {
@@ -82,12 +121,13 @@ export function OrderDetailsModal({ order, stageLabel, stageClassName, onClose }
   const phoneDigits = order.customerPhone?.replace(/\D/g, '');
   const { address, shipping } = splitNote(order.note);
   const itemsTotal = order.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-  const shippingValue = Math.max(0, Math.round((order.total - itemsTotal) * 100) / 100);
-  const payment = order.paymentMethod
-    ? PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod
-    : order.confirmationMethod === 'mercado_pago' || order.paymentReference
-      ? 'Mercado Pago (Checkout Pro)'
-      : 'Não informado';
+  // `total` é só dos produtos; o frete é cobrado à parte no Mercado Pago (shipping_cost).
+  // Pedidos antigos não têm shipping_cost: o frete deles só aparece no texto do endereço.
+  const shippingValue = order.shippingCost ?? 0;
+  const paidTotal = order.total + shippingValue;
+  const isPickup = order.deliveryMethod === 'pickup';
+  const deliveryLabel = isPickup ? 'Retirada na loja' : order.deliveryMethod === 'delivery' ? 'Entrega no endereço' : null;
+  const payment = paymentLabel(order);
 
   const timeline = [
     { label: 'Pedido feito', at: formatDateTime(order.createdAt) },
@@ -151,13 +191,34 @@ export function OrderDetailsModal({ order, stageLabel, stageClassName, onClose }
               )}
             </Section>
 
-            <Section icon={MapPin} title="Entrega">
-              {address.length > 0 ? (
+            <Section icon={isPickup ? Store : MapPin} title="Entrega">
+              {deliveryLabel && (
+                <span
+                  className={cn(
+                    'mb-2 inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-semibold',
+                    isPickup ? 'bg-bronze/15 text-bronze-dark' : 'bg-slate-200 text-ink',
+                  )}
+                >
+                  {deliveryLabel}
+                </span>
+              )}
+              {isPickup ? (
+                <p className="text-slate-600">O cliente vai buscar na loja. Sem frete.</p>
+              ) : address.length > 0 ? (
                 <div className="flex flex-col gap-0.5">
                   {address.map((line) => (
                     <span key={line}>{line}</span>
                   ))}
-                  {shipping && <span className="mt-2 text-xs text-slate-500">Frete: {shipping}</span>}
+                  {order.deliveryCep && !address.some((l) => l.startsWith('CEP')) && (
+                    <span>CEP: {order.deliveryCep.replace(/^(\d{5})(\d{3})$/, '$1-$2')}</span>
+                  )}
+                  {order.deliveryMethod ? (
+                    <span className="mt-2 text-xs text-slate-500">
+                      Frete: {shippingValue > 0 ? formatPrice(shippingValue) : 'grátis'}
+                    </span>
+                  ) : (
+                    shipping && <span className="mt-2 text-xs text-slate-500">Frete: {shipping}</span>
+                  )}
                 </div>
               ) : (
                 <span className="text-slate-500">Nenhum endereço informado.</span>
@@ -185,10 +246,12 @@ export function OrderDetailsModal({ order, stageLabel, stageClassName, onClose }
             </ul>
             <div className="mt-2 border-t border-line pt-2">
               <Row label="Produtos">{formatPrice(itemsTotal)}</Row>
-              {shippingValue > 0 && <Row label="Frete">{formatPrice(shippingValue)}</Row>}
+              {order.deliveryMethod && (
+                <Row label="Frete">{shippingValue > 0 ? formatPrice(shippingValue) : isPickup ? 'Retirada' : 'Grátis'}</Row>
+              )}
               <div className="flex justify-between gap-4 pt-1 text-base font-bold">
-                <span>Total</span>
-                <span>{formatPrice(order.total)}</span>
+                <span>Total pago</span>
+                <span>{formatPrice(paidTotal)}</span>
               </div>
             </div>
           </Section>

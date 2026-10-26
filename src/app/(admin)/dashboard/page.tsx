@@ -204,7 +204,7 @@ export default async function DashboardPage() {
                         · {units} peça{units === 1 ? '' : 's'}
                       </span>
                     </div>
-                    <span className="text-sm font-bold text-ink">{formatPrice(order.total)}</span>
+                    <span className="text-sm font-bold text-ink">{formatPrice(order.total + (order.shippingCost ?? 0))}</span>
                     <span className={cn('shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold', badge.className)}>
                       {badge.label}
                     </span>

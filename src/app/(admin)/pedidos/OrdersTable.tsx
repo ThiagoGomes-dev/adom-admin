@@ -187,6 +187,11 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
                         >
                           {order.customerName || '—'}
                         </button>
+                        {order.deliveryMethod && (
+                          <span className="text-xs font-medium text-bronze-text">
+                            {order.deliveryMethod === 'pickup' ? 'Retirada na loja' : 'Entrega'}
+                          </span>
+                        )}
                         {phoneDigits && (
                           <a
                             href={`https://wa.me/${phoneDigits}`}
@@ -207,7 +212,9 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
                     <td className="whitespace-nowrap px-3 py-4 text-slate-600">
                       {order.paymentMethod ? PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod : '—'}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-right font-bold text-ink">{formatPrice(order.total)}</td>
+                    <td className="whitespace-nowrap px-3 py-4 text-right font-bold text-ink">
+                      {formatPrice(order.total + (order.shippingCost ?? 0))}
+                    </td>
                     <td className="px-3 py-4">
                       <span
                         className={cn(

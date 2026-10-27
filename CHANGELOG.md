@@ -8,6 +8,8 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-10-27
+
 ### Adicionado
 - Acompanhamento do pedido pelo cliente: rotas públicas `GET /api/orders/[id]` (página "Meu pedido" do site, sem dados pessoais) e `POST /api/orders/lookup` (busca por número do pedido + telefone).
 - E-mail do cliente no pedido, código de rastreio ao marcar como enviado e etapa "Pronto para retirada" / "Retirado" para pedidos de retirada.

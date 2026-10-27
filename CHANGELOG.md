@@ -8,6 +8,11 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+### Adicionado
+- Subcategorias em vários níveis na tela Categorias: arrastar e soltar em cima de uma categoria para virar subcategoria, ou entre duas para mudar a ordem; botão "+" para criar subcategoria e campo "Fica dentro de" (alternativa no celular). Precisa da migration `2026-10-27_category_parent.sql`.
+- Produtos podem ficar em qualquer subcategoria ("Camisetas › Oversized"), e o filtro da lista de produtos inclui as subcategorias.
+- `GET /api/categories` devolve `parentId` e `sortOrder` para a loja montar o menu.
+
 ## [0.3.0] - 2026-10-27
 
 ### Adicionado

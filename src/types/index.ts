@@ -42,6 +42,10 @@ export interface Category {
   slug: string;
   icon?: string;
   image?: string;
+  /** id da categoria pai — presente só em subcategorias (pode haver vários níveis). */
+  parentId?: string;
+  /** posição entre as categorias irmãs (arrastar e soltar no painel). */
+  sortOrder?: number;
 }
 
 export type PaymentMethod = 'pix' | 'credito' | 'dinheiro';

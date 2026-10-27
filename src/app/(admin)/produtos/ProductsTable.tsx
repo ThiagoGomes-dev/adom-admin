@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Pencil, Search, Trash2 } from 'lucide-react';
 import type { Category, Product } from '@/types';
+import { categoryOptions, descendantSlugs } from '@/lib/categoryTree';
 import { deleteProduct, updateStock } from './actions';
 import { cn } from '@/lib/cn';
 import { Pagination, usePagination } from '@/components/ui/Pagination';
@@ -26,16 +27,22 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
   const [categoryFilter, setCategoryFilter] = useState('');
   const [onlyLowStock, setOnlyLowStock] = useState(false);
 
-  const categoryName = (slug: string) => categories.find((c) => c.slug === slug)?.name ?? slug;
+  const options = useMemo(() => categoryOptions(categories), [categories]);
+  const categoryName = (slug: string) => options.find((o) => o.value === slug)?.label ?? slug;
+  // filtrar por uma categoria também mostra os produtos das subcategorias dela
+  const filterSlugs = useMemo(
+    () => (categoryFilter ? descendantSlugs(categories, categoryFilter) : null),
+    [categories, categoryFilter],
+  );
 
   const filtered = useMemo(() => {
     return products.filter((p) => {
       if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
-      if (categoryFilter && p.category !== categoryFilter) return false;
+      if (filterSlugs && !filterSlugs.has(p.category)) return false;
       if (onlyLowStock && p.stockQuantity > 0) return false;
       return true;
     });
-  }, [products, search, categoryFilter, onlyLowStock]);
+  }, [products, search, filterSlugs, onlyLowStock]);
 
   const { page, pageCount, pageItems, setPage, total, pageSize } = usePagination(
     filtered,
@@ -76,9 +83,9 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
           className={fieldClass}
         >
           <option value="">Todas as categorias</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.slug}>
-              {c.name}
+          {options.map((o) => (
+            <option key={o.id} value={o.value}>
+              {o.label}
             </option>
           ))}
         </select>

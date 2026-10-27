@@ -35,6 +35,9 @@ export interface CategoryRow {
   slug: string;
   icon: string | null;
   image: string | null;
+  /** colunas da migration 2026-10-27_category_parent — ausentes em bancos que ainda não rodaram */
+  parent_id?: string | null;
+  sort_order?: number | null;
 }
 
 export function rowToProduct(row: ProductRow): Product {
@@ -64,6 +67,8 @@ export function rowToCategory(row: CategoryRow): Category {
     slug: row.slug,
     icon: row.icon ?? undefined,
     image: row.image ?? undefined,
+    parentId: row.parent_id ?? undefined,
+    sortOrder: row.sort_order ?? 0,
   };
 }
 

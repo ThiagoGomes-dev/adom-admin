@@ -887,3 +887,8 @@ alter table orders add column if not exists customer_email text;
 alter table orders add column if not exists tracking_code text;
 alter table orders add column if not exists ready_at timestamptz; -- retirada: pedido separado e pronto para buscar na loja
 create index if not exists orders_customer_phone_idx on orders (customer_phone, created_at desc);
+
+-- migração 2026-10-27: subcategorias (parent_id = categoria pai, vários níveis) e ordem entre irmãs
+alter table categories add column if not exists parent_id uuid references categories (id) on delete set null;
+alter table categories add column if not exists sort_order integer not null default 0;
+create index if not exists categories_parent_id_idx on categories (parent_id);

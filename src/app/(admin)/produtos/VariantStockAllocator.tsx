@@ -152,6 +152,7 @@ export function VariantStockAllocator({
             onChange={(e) => onTotalQuantityChange(e.target.value)}
             className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
           />
+          <p className="mt-1 text-xs text-slate-500">Quantas peças chegaram nesta compra, somando todas as cores e tamanhos.</p>
         </div>
         <div>
           <label className="text-sm font-medium text-slate-700">Valor total pago (R$)</label>
@@ -162,6 +163,7 @@ export function VariantStockAllocator({
             placeholder="quanto pagou pelo lote inteiro"
             className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
           />
+          <p className="mt-1 text-xs text-slate-500">Quanto você pagou pelo lote inteiro, não por peça. Ex.: 10 peças por R$ 500,00, digite 500,00. O custo por unidade é calculado sozinho.</p>
         </div>
         {onNoteChange && (
           <div>
@@ -176,6 +178,7 @@ export function VariantStockAllocator({
               placeholder="Ex: fornecedor X"
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
             />
+            <p className="mt-1 text-xs text-slate-500">Anotação só sua, aparece no histórico de entradas. Ex.: nome do fornecedor ou número da nota.</p>
           </div>
         )}
       </div>

@@ -31,10 +31,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-xl font-bold text-slate-900">ADOM — Painel</h1>
-        <p className="mt-1 text-sm text-slate-500">Entre para gerenciar produtos e estoque.</p>
+    <div className="flex min-h-screen items-center justify-center bg-ink px-4">
+      <div className="w-full max-w-sm rounded-[22px] bg-white p-8 shadow-xl">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-bronze font-display text-lg font-semibold text-ink">
+            A
+          </span>
+          <span className="flex flex-col">
+            <span className="font-display text-lg font-semibold tracking-[0.18em] text-ink">ADOM</span>
+            <span className="text-xs text-slate-500">Painel da loja</span>
+          </span>
+        </div>
+        <h1 className="mt-6 font-display text-2xl font-medium text-ink">Entrar no painel</h1>
+        <p className="mt-1 text-sm text-slate-600">Gerencie pedidos, vendas, produtos e estoque.</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
@@ -48,7 +57,7 @@ export default function LoginPage() {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              className="mt-1.5 w-full min-h-11 rounded-xl border border-line px-3.5 text-sm text-ink focus:border-bronze focus:outline-none focus:ring-1 focus:ring-bronze"
             />
           </div>
 
@@ -63,7 +72,7 @@ export default function LoginPage() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              className="mt-1.5 w-full min-h-11 rounded-xl border border-line px-3.5 text-sm text-ink focus:border-bronze focus:outline-none focus:ring-1 focus:ring-bronze"
             />
           </div>
 
@@ -72,7 +81,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+            className="min-h-11 w-full rounded-xl bg-ink text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>

@@ -8,6 +8,9 @@ import { slugify } from '@/lib/slug';
 import { compressImage } from '@/lib/compressImage';
 import { extractStoragePath } from '@/lib/storagePath';
 import { createClient } from '@/lib/supabase/client';
+import { cn } from '@/lib/cn';
+import { Pagination, usePagination } from '@/components/ui/Pagination';
+import { card, primaryButton } from '@/components/ui/PageHeader';
 import { createCategory, updateCategory, deleteCategory } from './actions';
 
 export function CategoriesManager({ initialCategories }: { initialCategories: Category[] }) {
@@ -20,6 +23,7 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { page, pageCount, pageItems, setPage, total, pageSize } = usePagination(categories);
 
   const resetForm = () => {
     setEditingId(null);
@@ -103,18 +107,18 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
   };
 
   return (
-    <div className="max-w-lg">
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <p className="text-sm font-semibold text-slate-900">{editingId ? 'Editar categoria' : 'Nova categoria'}</p>
+    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+      <div className={cn(card, 'p-5')}>
+        <p className="font-display text-lg font-medium text-ink">{editingId ? 'Editar categoria' : 'Nova categoria'}</p>
 
-        <div className="mt-3 flex items-center gap-3">
-          <label className="flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-slate-400">
+        <div className="mt-4 flex items-center gap-3">
+          <label className="flex h-20 w-20 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-bronze hover:text-bronze-text">
             {uploading ? (
               <Loader2 size={18} className="animate-spin" />
             ) : image ? (
               <img src={image} alt="Capa da categoria" className="h-full w-full object-cover" />
             ) : (
-              <ImagePlus size={18} />
+              <ImagePlus size={20} />
             )}
             <input
               type="file"
@@ -124,74 +128,99 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
               onChange={(e) => handleImageUpload(e.target.files)}
             />
           </label>
-          {image && !uploading && (
-            <button
-              type="button"
-              onClick={removeImage}
-              className="text-xs font-medium text-slate-500 hover:text-red-600"
-            >
+          {image && !uploading ? (
+            <button type="button" onClick={removeImage} className="text-xs font-medium text-slate-500 hover:text-red-600">
               Remover imagem
             </button>
+          ) : (
+            <p className="text-xs text-slate-500">Imagem de capa (opcional)</p>
           )}
         </div>
 
-        <div className="mt-3 flex gap-2">
+        <div className="mt-4 flex flex-col gap-2">
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Nome da categoria"
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+            aria-label="Nome da categoria"
+            className="min-h-11 rounded-xl border border-line px-3.5 text-sm text-ink focus:border-bronze focus:outline-none focus:ring-1 focus:ring-bronze"
           />
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={saving || uploading || !name.trim()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-          >
-            <Plus size={16} /> {editingId ? 'Salvar' : 'Adicionar'}
-          </button>
-          {editingId && (
-            <button type="button" onClick={resetForm} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
-              <X size={16} />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving || uploading || !name.trim()}
+              className={cn(primaryButton, 'flex-1')}
+            >
+              <Plus size={16} /> {editingId ? 'Salvar' : 'Adicionar'}
             </button>
-          )}
+            {editingId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                aria-label="Cancelar edição"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-line text-slate-500 hover:bg-slate-100"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
         </div>
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </div>
 
-      <ul className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
-        {categories.map((category) => (
-          <li key={category.id} className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-                {category.image ? (
-                  <img src={category.image} alt={category.name} className="h-full w-full object-cover" />
-                ) : (
-                  <ImagePlus size={16} className="text-slate-400" />
-                )}
+      <div className={cn(card, 'overflow-hidden')}>
+        <ul>
+          {pageItems.map((category, i) => (
+            <li
+              key={category.id}
+              className={cn('flex items-center justify-between gap-3 px-5 py-3', i > 0 && 'border-t border-slate-100')}
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+                  {category.image ? (
+                    <img src={category.image} alt={category.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <ImagePlus size={16} className="text-slate-400" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-ink">{category.name}</p>
+                  <p className="truncate text-xs text-slate-500">{category.slug}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-slate-900">{category.name}</p>
-                <p className="text-xs text-slate-500">{category.slug}</p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(category)}
+                  aria-label={`Editar ${category.name}`}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-slate-500 hover:bg-slate-100 hover:text-ink"
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(category.id)}
+                  aria-label={`Excluir ${category.name}`}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-slate-500 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <button type="button" onClick={() => startEdit(category)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
-                <Pencil size={15} />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete(category.id)}
-                className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          </li>
-        ))}
-        {categories.length === 0 && <li className="px-4 py-6 text-center text-sm text-slate-500">Nenhuma categoria ainda.</li>}
-      </ul>
+            </li>
+          ))}
+          {total === 0 && <li className="px-5 py-14 text-center text-sm text-slate-500">Nenhuma categoria ainda.</li>}
+        </ul>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          total={total}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          itemLabel="categorias"
+        />
+      </div>
     </div>
   );
 }

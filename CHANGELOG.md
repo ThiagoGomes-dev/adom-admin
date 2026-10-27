@@ -8,6 +8,10 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+### Alterado
+- Entrada de mercadoria: textos curtos de ajuda em "Quantidade", "Valor total pago" e "Observação" (reposição e estoque inicial do cadastro).
+- "Estoque atual por variação" com novo visual: agrupado por cor, um quadradinho por tamanho, total de unidades e variações zeradas em vermelho.
+
 ## [0.3.0] - 2026-10-27
 
 ### Adicionado

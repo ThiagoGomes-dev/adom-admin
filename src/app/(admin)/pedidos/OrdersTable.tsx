@@ -2,13 +2,14 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, X, Truck, Search, Eye } from 'lucide-react';
+import { Check, X, Truck, Search, Eye, Store, PackageCheck } from 'lucide-react';
 import type { Order } from '@/types';
 import { formatPrice } from '@/lib/currency';
 import { cn } from '@/lib/cn';
 import { Pagination, usePagination } from '@/components/ui/Pagination';
 import { card } from '@/components/ui/PageHeader';
-import { confirmOrder, cancelOrder, markOrderShipped } from './actions';
+import { stageOf, whatsappLink, type OrderStage } from '@/lib/orderTracking';
+import { confirmOrder, cancelOrder, markOrderShipped, markOrderReady, saveTrackingCode } from './actions';
 import { OrderDetailsModal } from './OrderDetailsModal';
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -17,15 +18,10 @@ const PAYMENT_LABELS: Record<string, string> = {
   dinheiro: 'Dinheiro',
 };
 
-/** Situação exibida — "confirmado" se divide em "pago, para enviar" e "enviado" conforme shipped_at. */
-type OrderStage = 'pending' | 'toShip' | 'shipped' | 'cancelled';
-
-const stageOf = (order: Order): OrderStage =>
-  order.status === 'confirmed' ? (order.shippedAt ? 'shipped' : 'toShip') : order.status;
-
 const STAGE_BADGE: Record<OrderStage, { label: string; className: string }> = {
   pending: { label: 'Aguardando pagamento', className: 'bg-amber-100 text-amber-800' },
   toShip: { label: 'Pago · enviar', className: 'bg-emerald-100 text-emerald-800' },
+  ready: { label: 'Pronto p/ retirada', className: 'bg-sky-100 text-sky-800' },
   shipped: { label: 'Enviado', className: 'bg-indigo-100 text-indigo-800' },
   cancelled: { label: 'Cancelado', className: 'bg-slate-100 text-slate-600' },
 };
@@ -34,12 +30,20 @@ const TABS: { id: OrderStage | 'all'; label: string }[] = [
   { id: 'all', label: 'Todos' },
   { id: 'pending', label: 'Aguardando pagamento' },
   { id: 'toShip', label: 'Pagos para enviar' },
-  { id: 'shipped', label: 'Enviados' },
+  { id: 'ready', label: 'Prontos p/ retirada' },
+  { id: 'shipped', label: 'Enviados/retirados' },
   { id: 'cancelled', label: 'Cancelados' },
 ];
 
+/** Na retirada, o `shipped_at` marca que o cliente buscou — o rótulo muda, a etapa é a mesma. */
+const badgeOf = (order: Order) => {
+  const stage = stageOf(order);
+  if (stage === 'shipped' && order.deliveryMethod === 'pickup') return { ...STAGE_BADGE.shipped, label: 'Retirado' };
+  return STAGE_BADGE[stage];
+};
+
 /** Lista de pedidos recebidos pelo site — espelha SalesTable.tsx, com status e ações de confirmar/cancelar só enquanto pendente. */
-export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
+export function OrdersTable({ initialOrders, storefrontUrl }: { initialOrders: Order[]; storefrontUrl: string }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -95,16 +99,59 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
     router.refresh();
   };
 
+  const updateLocal = (id: string, patch: Partial<Order>) =>
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...patch } : o)));
+
   const handleMarkShipped = async (order: Order) => {
+    const isPickup = order.deliveryMethod === 'pickup';
+    let trackingCode: string | undefined;
+    if (isPickup) {
+      if (!confirm('Confirmar que o cliente retirou o pedido?')) return;
+    } else {
+      const answer = prompt('Código de rastreio (pode deixar em branco e informar depois nos detalhes do pedido):', '');
+      if (answer === null) return;
+      trackingCode = answer.trim().toUpperCase() || undefined;
+    }
+
     setBusyId(order.id);
-    const result = await markOrderShipped(order.id);
+    const result = await markOrderShipped(order.id, trackingCode);
     setBusyId(null);
 
     if (result.error) {
       alert(result.error);
       return;
     }
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, shippedAt: new Date().toISOString() } : o)));
+    updateLocal(order.id, { shippedAt: new Date().toISOString(), ...(trackingCode ? { trackingCode } : {}) });
+    router.refresh();
+  };
+
+  const handleMarkReady = async (order: Order) => {
+    setBusyId(order.id);
+    const result = await markOrderReady(order.id);
+    setBusyId(null);
+
+    if (result.error) {
+      alert(result.error);
+      return;
+    }
+    updateLocal(order.id, { readyAt: new Date().toISOString() });
+    router.refresh();
+  };
+
+  const handleSaveTracking = async (order: Order) => {
+    const answer = prompt('Código de rastreio:', order.trackingCode ?? '');
+    if (answer === null) return;
+    const trackingCode = answer.trim().toUpperCase();
+
+    setBusyId(order.id);
+    const result = await saveTrackingCode(order.id, trackingCode);
+    setBusyId(null);
+
+    if (result.error) {
+      alert(result.error);
+      return;
+    }
+    updateLocal(order.id, { trackingCode: trackingCode || undefined });
     router.refresh();
   };
 
@@ -170,7 +217,8 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
             <tbody>
               {pageItems.map((order) => {
                 const stage = stageOf(order);
-                const badge = STAGE_BADGE[stage];
+                const badge = badgeOf(order);
+                const isPickup = order.deliveryMethod === 'pickup';
                 const phoneDigits = order.customerPhone?.replace(/\D/g, '');
                 const busy = busyId === order.id;
                 return (
@@ -194,7 +242,7 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
                         )}
                         {phoneDigits && (
                           <a
-                            href={`https://wa.me/${phoneDigits}`}
+                            href={whatsappLink(phoneDigits, '')}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs font-medium text-emerald-700 hover:underline"
@@ -258,6 +306,26 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
                             <X size={14} /> Não confirmada
                           </button>
                         </div>
+                      ) : stage === 'toShip' && isPickup ? (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkReady(order)}
+                          disabled={busy}
+                          className="inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-[10px] bg-ink px-3.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                          title="Pedido separado, o cliente já pode buscar"
+                        >
+                          <Store size={14} /> Pronto para retirada
+                        </button>
+                      ) : stage === 'ready' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkShipped(order)}
+                          disabled={busy}
+                          className="inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-[10px] bg-ink px-3.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                          title="O cliente buscou o pedido"
+                        >
+                          <PackageCheck size={14} /> Marcar como retirado
+                        </button>
                       ) : stage === 'toShip' ? (
                         <button
                           type="button"
@@ -270,7 +338,7 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
                         </button>
                       ) : stage === 'shipped' ? (
                         <span className="whitespace-nowrap text-xs text-slate-500">
-                          Enviado em {new Date(order.shippedAt!).toLocaleDateString('pt-BR')}
+                          {isPickup ? 'Retirado' : 'Enviado'} em {new Date(order.shippedAt!).toLocaleDateString('pt-BR')}
                         </span>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
@@ -303,8 +371,11 @@ export function OrdersTable({ initialOrders }: { initialOrders: Order[] }) {
       {detailsOrder && (
         <OrderDetailsModal
           order={detailsOrder}
-          stageLabel={STAGE_BADGE[stageOf(detailsOrder)].label}
-          stageClassName={STAGE_BADGE[stageOf(detailsOrder)].className}
+          stageLabel={badgeOf(detailsOrder).label}
+          stageClassName={badgeOf(detailsOrder).className}
+          storefrontUrl={storefrontUrl}
+          busy={busyId === detailsOrder.id}
+          onEditTracking={() => handleSaveTracking(detailsOrder)}
           onClose={closeDetails}
         />
       )}

@@ -19,7 +19,7 @@ export default async function PedidosPage() {
         }
       />
 
-      <OrdersTable initialOrders={orders} />
+      <OrdersTable initialOrders={orders} storefrontUrl={process.env.STOREFRONT_URL ?? ''} />
     </div>
   );
 }

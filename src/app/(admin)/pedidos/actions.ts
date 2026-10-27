@@ -43,16 +43,45 @@ export async function cancelOrder(id: string): Promise<{ error?: string }> {
 }
 
 /**
- * Marca um pedido já pago como enviado — não envolve estoque/dinheiro, só
- * uma marcação operacional, por isso é um update direto (sem RPC).
+ * Marca um pedido já pago como enviado (entrega) ou retirado (retirada) —
+ * não envolve estoque/dinheiro, só uma marcação operacional, por isso é um
+ * update direto (sem RPC). O código de rastreio é opcional: dá pra enviar
+ * agora e informar depois com `saveTrackingCode`.
  */
-export async function markOrderShipped(id: string): Promise<{ error?: string }> {
+export async function markOrderShipped(id: string, trackingCode?: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const code = trackingCode?.trim().toUpperCase() || null;
+  const { error } = await supabase
+    .from('orders')
+    .update({ shipped_at: new Date().toISOString(), ...(code ? { tracking_code: code } : {}) })
+    .eq('id', id)
+    .eq('status', 'confirmed');
+  if (error) return { error: error.message };
+
+  revalidatePath('/pedidos');
+  return {};
+}
+
+/** Grava ou corrige o código de rastreio de um pedido já pago. */
+export async function saveTrackingCode(id: string, trackingCode: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const code = trackingCode.trim().toUpperCase() || null;
+  const { error } = await supabase.from('orders').update({ tracking_code: code }).eq('id', id).eq('status', 'confirmed');
+  if (error) return { error: error.message };
+
+  revalidatePath('/pedidos');
+  return {};
+}
+
+/** Retirada: o pedido pago foi separado e o cliente já pode buscar na loja. */
+export async function markOrderReady(id: string): Promise<{ error?: string }> {
   const supabase = await createClient();
   const { error } = await supabase
     .from('orders')
-    .update({ shipped_at: new Date().toISOString() })
+    .update({ ready_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('status', 'confirmed');
+    .eq('status', 'confirmed')
+    .eq('delivery_method', 'pickup');
   if (error) return { error: error.message };
 
   revalidatePath('/pedidos');

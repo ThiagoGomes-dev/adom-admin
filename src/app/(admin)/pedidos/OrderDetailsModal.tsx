@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { X, MapPin, User, CreditCard, Package, Clock, MessageCircle, Store } from 'lucide-react';
+import { X, MapPin, User, CreditCard, Package, Clock, MessageCircle, Store, Mail, Send, Truck, ExternalLink } from 'lucide-react';
 import type { Order } from '@/types';
 import { formatPrice } from '@/lib/currency';
 import { cn } from '@/lib/cn';
+import { customerMessage, mailtoLink, orderPageUrl, whatsappLink } from '@/lib/orderTracking';
 
 const PAYMENT_LABELS: Record<string, string> = {
   pix: 'Pix',
@@ -98,10 +99,22 @@ interface OrderDetailsModalProps {
   order: Order;
   stageLabel: string;
   stageClassName: string;
+  /** URL pública do site, pra montar o link "Meu pedido" das mensagens */
+  storefrontUrl: string;
+  busy: boolean;
+  onEditTracking: () => void;
   onClose: () => void;
 }
 
-export function OrderDetailsModal({ order, stageLabel, stageClassName, onClose }: OrderDetailsModalProps) {
+export function OrderDetailsModal({
+  order,
+  stageLabel,
+  stageClassName,
+  storefrontUrl,
+  busy,
+  onEditTracking,
+  onClose,
+}: OrderDetailsModalProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -128,11 +141,14 @@ export function OrderDetailsModal({ order, stageLabel, stageClassName, onClose }
   const isPickup = order.deliveryMethod === 'pickup';
   const deliveryLabel = isPickup ? 'Retirada na loja' : order.deliveryMethod === 'delivery' ? 'Entrega no endereço' : null;
   const payment = paymentLabel(order);
+  const message = storefrontUrl ? customerMessage(order, storefrontUrl) : null;
+  const canTrack = order.status === 'confirmed' && !isPickup;
 
   const timeline = [
     { label: 'Pedido feito', at: formatDateTime(order.createdAt) },
     { label: 'Pagamento confirmado', at: formatDateTime(order.confirmedAt) },
-    { label: 'Enviado', at: formatDateTime(order.shippedAt) },
+    { label: 'Pronto para retirada', at: formatDateTime(order.readyAt) },
+    { label: isPickup ? 'Retirado' : 'Enviado', at: formatDateTime(order.shippedAt) },
     { label: 'Cancelado', at: formatDateTime(order.cancelledAt) },
   ].filter((t) => t.at);
 
@@ -179,14 +195,17 @@ export function OrderDetailsModal({ order, stageLabel, stageClassName, onClose }
             <Section icon={User} title="Cliente">
               <Row label="Nome">{order.customerName || '—'}</Row>
               <Row label="Telefone">{phoneDigits ? formatPhone(phoneDigits) : '—'}</Row>
+              <Row label="E-mail">
+                {order.customerEmail ? <span className="break-all">{order.customerEmail}</span> : '—'}
+              </Row>
               {phoneDigits && (
                 <a
-                  href={`https://wa.me/${phoneDigits}`}
+                  href={whatsappLink(phoneDigits, '')}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[10px] bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800"
+                  className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-line bg-white px-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
                 >
-                  <MessageCircle size={16} /> Chamar no WhatsApp
+                  <MessageCircle size={16} /> Conversar no WhatsApp
                 </a>
               )}
             </Section>
@@ -226,6 +245,46 @@ export function OrderDetailsModal({ order, stageLabel, stageClassName, onClose }
             </Section>
           </div>
 
+          {message && (phoneDigits || order.customerEmail) && (
+            <Section icon={Send} title="Avisar o cliente">
+              <p className="text-slate-600">
+                Mensagem pronta para a etapa <strong>{stageLabel.toLowerCase()}</strong>, com o link de acompanhamento.
+                Confira e envie.
+              </p>
+              <pre className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-line bg-white p-3 font-sans text-xs text-slate-700">
+                {message.body}
+              </pre>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {phoneDigits && (
+                  <a
+                    href={whatsappLink(phoneDigits, message.body)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800"
+                  >
+                    <MessageCircle size={16} /> Avisar no WhatsApp
+                  </a>
+                )}
+                {order.customerEmail && (
+                  <a
+                    href={mailtoLink(order.customerEmail, message)}
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-ink px-3 text-sm font-semibold text-white hover:bg-slate-800"
+                  >
+                    <Mail size={16} /> Avisar por e-mail
+                  </a>
+                )}
+              </div>
+              <a
+                href={orderPageUrl(storefrontUrl, order.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-bronze-text hover:underline"
+              >
+                <ExternalLink size={12} /> Ver a página que o cliente vê
+              </a>
+            </Section>
+          )}
+
           <Section icon={Package} title="Itens">
             <ul className="flex flex-col">
               {order.items.map((item, i) => (
@@ -261,6 +320,19 @@ export function OrderDetailsModal({ order, stageLabel, stageClassName, onClose }
               <Row label="Forma">{payment}</Row>
               {order.paymentReference && <Row label="ID no Mercado Pago">{order.paymentReference}</Row>}
               <Row label="Confirmação">{order.confirmationMethod === 'mercado_pago' ? 'Automática' : 'Manual'}</Row>
+              {canTrack && (
+                <div className="mt-2 border-t border-line pt-2">
+                  <Row label="Rastreio">{order.trackingCode ?? '—'}</Row>
+                  <button
+                    type="button"
+                    onClick={onEditTracking}
+                    disabled={busy}
+                    className="mt-1 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-line bg-white px-3 text-sm font-semibold text-ink hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    <Truck size={16} /> {order.trackingCode ? 'Corrigir rastreio' : 'Informar rastreio'}
+                  </button>
+                </div>
+              )}
             </Section>
 
             <Section icon={Clock} title="Histórico">

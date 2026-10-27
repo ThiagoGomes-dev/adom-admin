@@ -154,6 +154,9 @@ export interface OrderRow {
   mp_payment_type?: string | null;
   mp_payment_method?: string | null;
   mp_installments?: number | null;
+  customer_email?: string | null;
+  tracking_code?: string | null;
+  ready_at?: string | null;
 }
 
 export function rowToOrder(row: OrderRow): Order {
@@ -188,6 +191,9 @@ export function rowToOrder(row: OrderRow): Order {
     mpPaymentType: row.mp_payment_type ?? undefined,
     mpPaymentMethod: row.mp_payment_method ?? undefined,
     mpInstallments: row.mp_installments ?? undefined,
+    customerEmail: row.customer_email ?? undefined,
+    trackingCode: row.tracking_code ?? undefined,
+    readyAt: row.ready_at ?? undefined,
   };
 }
 

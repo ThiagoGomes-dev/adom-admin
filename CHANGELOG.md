@@ -8,6 +8,8 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-10-26
+
 ### Alterado
 - Novo visual do painel (cores e fontes do site, menu lateral escuro), listas paginadas com 10 itens e janela com os detalhes completos do pedido (cliente, WhatsApp, entrega ou retirada, frete, forma de pagamento e histórico).
 

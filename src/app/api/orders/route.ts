@@ -5,19 +5,12 @@ import { resolveSkuId } from '@/lib/orderResolution';
 import { createPreferenceForOrder } from '@/lib/mercadopago';
 import { computeShippingCost, lookupCepCity, type DeliveryMethod } from '@/lib/shipping';
 import { rowToOrder, type OrderRow, type ProductRow, type ProductVariantSkuRow } from '@/lib/mappers';
-
-const ALLOWED_ORIGIN = process.env.STOREFRONT_ORIGIN ?? '*';
+import { withCors } from '@/lib/cors';
+import { isValidEmail } from '@/lib/orderTracking';
 
 const MAX_ITEMS = 30;
 const MAX_QTY_PER_ITEM = 50;
 const MAX_TOTAL_QTY = 200;
-
-function withCors(response: NextResponse) {
-  response.headers.set('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-  response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-  return response;
-}
 
 function badRequest(message: string) {
   return withCors(NextResponse.json({ error: message }, { status: 400 }));
@@ -37,6 +30,8 @@ interface CreateOrderBody {
   cep?: string;
   customerName?: string;
   customerPhone?: string;
+  /** contato alternativo ao WhatsApp — a loja manda as atualizações do pedido manualmente */
+  customerEmail?: string;
   note?: string;
 }
 
@@ -105,6 +100,12 @@ export async function POST(request: Request) {
   if (!body.customerName || !body.customerName.trim()) {
     return badRequest('Nome do cliente é obrigatório.');
   }
+  // O site exige o e-mail, mas aqui ele ainda é opcional: o painel pode ser
+  // publicado antes do site, e o site antigo não manda o campo.
+  const customerEmail = (body.customerEmail ?? '').trim().toLowerCase() || null;
+  if (customerEmail && !isValidEmail(customerEmail)) {
+    return badRequest('E-mail do cliente inválido.');
+  }
 
   const supabase = await createClient();
   const productIds = [...new Set(body.items.map((i) => i.productId))];
@@ -170,6 +171,7 @@ export async function POST(request: Request) {
       delivery_method: deliveryMethod,
       shipping_cost: shippingCost,
       delivery_cep: deliveryMethod === 'delivery' ? cepDigits : null,
+      customer_email: customerEmail,
     })
     .eq('id', order.id);
   if (deliveryError) {

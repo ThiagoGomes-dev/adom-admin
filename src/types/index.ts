@@ -105,6 +105,12 @@ export interface Order {
   mpPaymentType?: string;
   mpPaymentMethod?: string;
   mpInstallments?: number;
+  /** e-mail de contato informado no carrinho do site — ausente em pedidos antigos */
+  customerEmail?: string;
+  /** código de rastreio dos Correios/transportadora, informado ao marcar como enviado */
+  trackingCode?: string;
+  /** retirada: quando o pedido ficou separado e pronto para o cliente buscar */
+  readyAt?: string;
 }
 
 /** Uma reposição de estoque — registrada ao repor um produto, guarda o custo daquela leva. */

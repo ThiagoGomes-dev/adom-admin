@@ -8,6 +8,14 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+### Adicionado
+- Acompanhamento do pedido pelo cliente: rotas públicas `GET /api/orders/[id]` (página "Meu pedido" do site, sem dados pessoais) e `POST /api/orders/lookup` (busca por número do pedido + telefone).
+- E-mail do cliente no pedido, código de rastreio ao marcar como enviado e etapa "Pronto para retirada" / "Retirado" para pedidos de retirada.
+- Botões "Avisar no WhatsApp" e "Avisar por e-mail" nos detalhes do pedido, com mensagem pronta para cada etapa e o link de acompanhamento.
+
+### Corrigido
+- Links de WhatsApp do painel agora levam o código do país (55), sem ele o WhatsApp não abria a conversa certa.
+
 ### Alterado
 - Novo visual do painel (cores e fontes do site, menu lateral escuro), listas paginadas com 10 itens e janela com os detalhes completos do pedido (cliente, WhatsApp, entrega ou retirada, frete, forma de pagamento e histórico).
 

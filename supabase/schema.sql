@@ -881,3 +881,9 @@ alter table orders add column if not exists delivery_cep text;
 alter table orders add column if not exists mp_payment_type text;   -- credit_card | debit_card | bank_transfer (Pix) | account_money ...
 alter table orders add column if not exists mp_payment_method text; -- visa | master | pix ...
 alter table orders add column if not exists mp_installments integer;
+
+-- migração: acompanhamento do pedido pelo cliente (e-mail, rastreio, pronto para retirada)
+alter table orders add column if not exists customer_email text;
+alter table orders add column if not exists tracking_code text;
+alter table orders add column if not exists ready_at timestamptz; -- retirada: pedido separado e pronto para buscar na loja
+create index if not exists orders_customer_phone_idx on orders (customer_phone, created_at desc);

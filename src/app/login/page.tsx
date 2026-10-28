@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -33,14 +34,9 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-ink px-4">
       <div className="w-full max-w-sm rounded-[22px] bg-white p-8 shadow-xl">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-bronze font-display text-lg font-semibold text-ink">
-            A
-          </span>
-          <span className="flex flex-col">
-            <span className="font-display text-lg font-semibold tracking-[0.18em] text-ink">ADOM</span>
-            <span className="text-xs text-slate-500">Painel da loja</span>
-          </span>
+        <div className="flex flex-col gap-1.5">
+          <Image src="/img/adom-dark.png" alt="ADOM" width={546} height={108} className="h-8 w-auto self-start" priority />
+          <span className="text-xs text-slate-500">Painel da loja</span>
         </div>
         <h1 className="mt-6 font-display text-2xl font-medium text-ink">Entrar no painel</h1>
         <p className="mt-1 text-sm text-slate-600">Gerencie pedidos, vendas, produtos e estoque.</p>

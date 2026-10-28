@@ -8,6 +8,9 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+### Alterado
+- Logo do painel (menu lateral e tela de login) igual à do site.
+
 ## [0.4.0] - 2026-10-28
 
 ### Adicionado

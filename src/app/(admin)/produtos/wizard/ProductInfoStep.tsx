@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { Plus, X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Category } from '@/types';
+import { categoryOptions } from '@/lib/categoryTree';
 
 interface ProductInfoStepProps {
   name: string;
@@ -113,9 +114,9 @@ export function ProductInfoStep({
               onChange={(e) => onCategoryChange(e.target.value)}
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
             >
-              {categoryList.map((c) => (
-                <option key={c.id} value={c.slug}>
-                  {c.name}
+              {categoryOptions(categoryList).map((o) => (
+                <option key={o.id} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>

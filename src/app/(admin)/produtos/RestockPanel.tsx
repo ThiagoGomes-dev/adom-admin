@@ -103,6 +103,7 @@ function SimpleRestockPanel({ product, entries }: { product: Product; entries: S
               disabled={saving}
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
             />
+            <p className="mt-1 text-xs text-slate-500">Quantas peças chegaram nesta compra.</p>
           </div>
           <div>
             <label className="text-sm font-medium text-slate-700">Valor total pago (R$)</label>
@@ -113,6 +114,7 @@ function SimpleRestockPanel({ product, entries }: { product: Product; entries: S
               disabled={saving}
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
             />
+            <p className="mt-1 text-xs text-slate-500">Quanto você pagou pelo lote inteiro, não por peça. Ex.: 10 peças por R$ 500,00, digite 500,00. O custo por unidade é calculado sozinho.</p>
           </div>
           <div>
             <label className="text-sm font-medium text-slate-700">
@@ -126,6 +128,7 @@ function SimpleRestockPanel({ product, entries }: { product: Product; entries: S
               disabled={saving}
               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 disabled:bg-slate-50"
             />
+            <p className="mt-1 text-xs text-slate-500">Anotação só sua, aparece no histórico de entradas. Ex.: nome do fornecedor ou número da nota.</p>
           </div>
         </div>
 
@@ -283,20 +286,7 @@ function VariantRestockPanel({
         </button>
       </div>
 
-      <div className="mt-4 rounded-lg border border-slate-100 p-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estoque atual por variação</h3>
-        <ul className="mt-2 space-y-1 text-sm text-slate-600">
-          {skus.map((sku) => (
-            <li key={sku.id} className="flex items-center justify-between">
-              <span>{sku.label}</span>
-              <span className="text-slate-500">
-                {sku.stockQuantity} unid. · {formatPrice(sku.costPrice)}/unid.
-              </span>
-            </li>
-          ))}
-          {skus.length === 0 && <li className="text-slate-400">Nenhuma variação cadastrada ainda.</li>}
-        </ul>
-      </div>
+      <VariantStockOverview skus={skus} />
 
       {orphanSkus.length > 0 && (
         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
@@ -313,6 +303,80 @@ function VariantRestockPanel({
 
       <StockEntryHistory entries={entries} skuLabels={skuLabels} />
     </section>
+  );
+}
+
+/**
+ * Estoque atual de cada combinação, agrupado pela primeira parte do rótulo
+ * ("PRETA / 38" → grupo PRETA, quadradinho 38). Variação zerada fica em
+ * destaque para o lojista ver na hora o que falta repor.
+ */
+function VariantStockOverview({ skus }: { skus: ProductVariantSku[] }) {
+  const totalUnits = skus.reduce((sum, sku) => sum + sku.stockQuantity, 0);
+  const outOfStock = skus.filter((sku) => sku.stockQuantity === 0).length;
+
+  const groups = new Map<string, { sku: ProductVariantSku; name: string }[]>();
+  for (const sku of skus) {
+    const sep = sku.label.indexOf(' / ');
+    const group = sep === -1 ? '' : sku.label.slice(0, sep);
+    const name = sep === -1 ? sku.label : sku.label.slice(sep + 3);
+    groups.set(group, [...(groups.get(group) ?? []), { sku, name }]);
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estoque atual por variação</h3>
+        {skus.length > 0 && (
+          <p className="text-xs text-slate-500">
+            <span className="font-semibold text-slate-700">{totalUnits} unid.</span> no total
+            {outOfStock > 0 && (
+              <>
+                {' · '}
+                <span className="font-semibold text-red-600">
+                  {outOfStock === skus.length ? 'todas zeradas' : `${outOfStock} zerada${outOfStock > 1 ? 's' : ''}`}
+                </span>
+              </>
+            )}
+          </p>
+        )}
+      </div>
+
+      {skus.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-400">Nenhuma variação cadastrada ainda.</p>
+      ) : (
+        <div className="mt-3 space-y-4">
+          {[...groups.entries()].map(([group, items]) => (
+            <div key={group || '_'}>
+              {group && <p className="mb-2 text-sm font-semibold text-slate-700">{group}</p>}
+              <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                {items.map(({ sku, name }) => {
+                  const empty = sku.stockQuantity === 0;
+                  return (
+                    <li
+                      key={sku.id}
+                      className={`rounded-lg border px-2 py-2 text-center ${
+                        empty ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'
+                      }`}
+                    >
+                      <p className="truncate text-xs font-medium text-slate-500" title={name}>
+                        {name}
+                      </p>
+                      <p className={`text-lg font-semibold leading-tight ${empty ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {sku.stockQuantity}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {empty ? 'sem estoque' : sku.costPrice > 0 ? `${formatPrice(sku.costPrice)}/unid.` : 'unid.'}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

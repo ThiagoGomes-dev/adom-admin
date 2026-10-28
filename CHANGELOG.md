@@ -8,6 +8,17 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+## [0.4.0] - 2026-10-28
+
+### Adicionado
+- Subcategorias em vários níveis na tela Categorias: arrastar e soltar em cima de uma categoria para virar subcategoria, ou entre duas para mudar a ordem; botão "+" para criar subcategoria e campo "Fica dentro de" (alternativa no celular). Precisa da migration `2026-10-27_category_parent.sql`.
+- Produtos podem ficar em qualquer subcategoria ("Camisetas › Oversized"), e o filtro da lista de produtos inclui as subcategorias.
+- `GET /api/categories` devolve `parentId` e `sortOrder` para a loja montar o menu.
+
+### Alterado
+- Entrada de mercadoria: textos curtos de ajuda em "Quantidade", "Valor total pago" e "Observação" (reposição e estoque inicial do cadastro).
+- "Estoque atual por variação" com novo visual: agrupado por cor, um quadradinho por tamanho, total de unidades e variações zeradas em vermelho.
+
 ## [0.3.0] - 2026-10-27
 
 ### Adicionado

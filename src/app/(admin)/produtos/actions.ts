@@ -102,6 +102,23 @@ export async function listStockEntries(productId: string): Promise<StockEntry[]>
   return (data as StockEntryRow[]).map(rowToStockEntry);
 }
 
+/**
+ * Desfaz uma entrada de mercadoria registrada errado. Chama `undo_stock_entry`
+ * no banco, que desfaz o lote inteiro (todas as variações gravadas junto com
+ * essa entrada), recalcula o custo médio e apaga as linhas do histórico —
+ * ou recusa, se parte das unidades já foi vendida.
+ */
+export async function undoStockEntry(input: { entryId: string; productId: string }): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('undo_stock_entry', { p_entry_id: input.entryId });
+  if (error) return { error: error.message };
+
+  revalidatePath('/produtos');
+  revalidatePath(`/produtos/${input.productId}`);
+  revalidatePath('/dashboard');
+  return {};
+}
+
 export interface ProductVariantSkusResult {
   /** SKUs que correspondem às combinações atuais de `product.variants`. */
   skus: ProductVariantSku[];

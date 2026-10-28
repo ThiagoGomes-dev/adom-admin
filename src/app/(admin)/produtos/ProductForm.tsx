@@ -85,7 +85,6 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-
   // Estoque inicial ao cadastrar um produto novo — opcional (pode cadastrar
   // sem estoque e repor depois no passo Estoque). Com variantes usa o mesmo
   // VariantStockAllocator do "Repor estoque"; sem variantes, os 3 campos

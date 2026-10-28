@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { PackagePlus } from 'lucide-react';
+import { PackagePlus, Undo2 } from 'lucide-react';
 import type { Product, ProductVariantSku, StockEntry } from '@/types';
 import { formatPrice } from '@/lib/currency';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
-import { restockProduct, restockProductVariants } from './actions';
+import { restockProduct, restockProductVariants, undoStockEntry } from './actions';
 import { VariantStockAllocator, allocatorCanSubmit, type VariantStockAllocatorRow } from './VariantStockAllocator';
 
 interface RestockPanelProps {
@@ -151,7 +151,7 @@ function SimpleRestockPanel({ product, entries }: { product: Product; entries: S
         </button>
       </div>
 
-      <StockEntryHistory entries={entries} />
+      <StockEntryHistory productId={product.id} entries={entries} />
     </section>
   );
 }
@@ -301,7 +301,7 @@ function VariantRestockPanel({
         </div>
       )}
 
-      <StockEntryHistory entries={entries} skuLabels={skuLabels} />
+      <StockEntryHistory productId={product.id} entries={entries} skuLabels={skuLabels} />
     </section>
   );
 }
@@ -380,24 +380,87 @@ function VariantStockOverview({ skus }: { skus: ProductVariantSku[] }) {
   );
 }
 
-function StockEntryHistory({ entries, skuLabels }: { entries: StockEntry[]; skuLabels?: Record<string, string> }) {
+/**
+ * Histórico agrupado por entrada: um lote de produto com variação grava uma
+ * linha por variação, todas com o mesmo `createdAt` (mesma transação), então
+ * aparecem juntas e o "Desfazer" desfaz o lote inteiro — é o que o lojista
+ * precisa quando errou a quantidade ou esqueceu uma cor na distribuição.
+ */
+function StockEntryHistory({
+  productId,
+  entries,
+  skuLabels,
+}: {
+  productId: string;
+  entries: StockEntry[];
+  skuLabels?: Record<string, string>;
+}) {
+  const router = useRouter();
+  const [undoingId, setUndoingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   if (entries.length === 0) return null;
+
+  const batches = new Map<string, StockEntry[]>();
+  for (const entry of entries) {
+    batches.set(entry.createdAt, [...(batches.get(entry.createdAt) ?? []), entry]);
+  }
+
+  const handleUndo = async (batch: StockEntry[]) => {
+    if (undoingId) return;
+    const quantity = batch.reduce((sum, e) => sum + e.quantity, 0);
+    const ok = confirm(
+      `Desfazer esta entrada? ${quantity} unid. saem do estoque e o custo médio volta a ser calculado sem ela. ` +
+        'A entrada some do histórico. Depois é só registrar de novo do jeito certo.',
+    );
+    if (!ok) return;
+
+    setError(null);
+    setUndoingId(batch[0].id);
+    const result = await undoStockEntry({ entryId: batch[0].id, productId });
+    setUndoingId(null);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+  };
 
   return (
     <div className="mt-6 border-t border-slate-100 pt-4">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Histórico de entradas</h3>
-      <ul className="mt-3 space-y-2">
-        {entries.map((entry) => {
-          const variantLabel = entry.skuId ? skuLabels?.[entry.skuId] : undefined;
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      <ul className="mt-3 space-y-3">
+        {[...batches.values()].map((batch) => {
+          const first = batch[0];
+          const quantity = batch.reduce((sum, e) => sum + e.quantity, 0);
+          const totalCost = batch.reduce((sum, e) => sum + e.totalCost, 0);
+          const variantLines = batch.filter((e) => e.skuId);
+          const undoing = undoingId === first.id;
           return (
-            <li key={entry.id} className="flex items-center justify-between gap-3 text-sm text-slate-600">
-              <span>
-                {new Date(entry.createdAt).toLocaleDateString('pt-BR')} · {entry.quantity} unid. ·{' '}
-                {formatPrice(entry.totalCost)}
-                {variantLabel ? ` · ${variantLabel}` : ''}
-                {entry.note ? ` · ${entry.note}` : ''}
-              </span>
-              <span className="shrink-0 text-xs text-slate-400">{formatPrice(entry.unitCost)}/unid.</span>
+            <li key={first.id} className="rounded-lg border border-slate-100 px-3 py-2 text-sm text-slate-600">
+              <div className="flex items-start justify-between gap-3">
+                <span>
+                  {new Date(first.createdAt).toLocaleDateString('pt-BR')} · {quantity} unid. · {formatPrice(totalCost)}
+                  {first.note ? ` · ${first.note}` : ''}
+                  <span className="ml-2 text-xs text-slate-400">{formatPrice(first.unitCost)}/unid.</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleUndo(batch)}
+                  disabled={undoingId !== null}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                >
+                  <Undo2 size={13} /> {undoing ? 'Desfazendo...' : 'Desfazer'}
+                </button>
+              </div>
+              {variantLines.length > 0 && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {variantLines
+                    .map((e) => `${skuLabels?.[e.skuId!] ?? 'variação removida'}: ${e.quantity}`)
+                    .join(' · ')}
+                </p>
+              )}
             </li>
           );
         })}

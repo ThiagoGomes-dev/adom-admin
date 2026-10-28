@@ -8,6 +8,9 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+### Adicionado
+- Botão "Desfazer" em cada entrada do histórico do Estoque: tira as unidades daquele lote (de todas as cores/tamanhos dele), recalcula o custo médio e apaga a entrada, para registrar de novo do jeito certo. Recusa se parte das unidades já foi vendida. Precisa da migration `2026-10-28_undo_stock_entry.sql`.
+
 ## [0.4.1] - 2026-10-28
 
 ### Corrigido

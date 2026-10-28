@@ -8,6 +8,11 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+## [0.4.1] - 2026-10-28
+
+### Corrigido
+- Editar produto: ao adicionar um grupo de variação (ou novas opções) num produto já cadastrado, a seção Preço agora mostra uma linha por combinação, e salvar cria as variações novas com o preço informado. Antes ficava "Defina ao menos um grupo de variante" e o salvar travava em "Preencha o preço de todas as variações".
+
 ## [0.4.0] - 2026-10-28
 
 ### Adicionado

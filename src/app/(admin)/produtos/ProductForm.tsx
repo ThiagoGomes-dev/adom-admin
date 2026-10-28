@@ -9,9 +9,17 @@ import { compressImage } from '@/lib/compressImage';
 import { extractStoragePath } from '@/lib/storagePath';
 import { createClient } from '@/lib/supabase/client';
 import { cartesianCombos, comboKeyOf, comboLabelOf } from '@/lib/variantCombos';
-import { createProduct, updateProduct, createProductWithVariants, restockProduct, setVariantSkuPricing } from './actions';
+import {
+  createProduct,
+  updateProduct,
+  createProductWithVariants,
+  restockProduct,
+  setVariantSkuPricing,
+  listProductVariantSkus,
+} from './actions';
 import { createCategory } from '../categorias/actions';
 import type { VariantStockAllocatorRow } from './VariantStockAllocator';
+import type { VariantPriceRow } from './VariantPriceTable';
 import { RestockPanel } from './RestockPanel';
 import { WizardStepper } from './wizard/WizardStepper';
 import { ProductInfoStep } from './wizard/ProductInfoStep';
@@ -77,15 +85,6 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Preço por variação (edição) — chave = sku.id. Sempre em tabela agora,
-  // sem alternância "único vs por variação": o preço do produto é só o
-  // menor preço entre as variações, derivado na hora de salvar.
-  const [skuPrices, setSkuPrices] = useState<Record<string, string>>(
-    Object.fromEntries(skus.map((s) => [s.id, s.price != null ? String(s.price) : ''])),
-  );
-  const [skuPromoPrices, setSkuPromoPrices] = useState<Record<string, string>>(
-    Object.fromEntries(skus.map((s) => [s.id, s.promoPrice != null ? String(s.promoPrice) : ''])),
-  );
 
   // Estoque inicial ao cadastrar um produto novo — opcional (pode cadastrar
   // sem estoque e repor depois no passo Estoque). Com variantes usa o mesmo
@@ -95,8 +94,17 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
   const [initialTotalCost, setInitialTotalCost] = useState('');
   const [initialNote, setInitialNote] = useState('');
   const [initialAllocations, setInitialAllocations] = useState<Record<string, string>>({});
-  const [initialPrices, setInitialPrices] = useState<Record<string, string>>({});
-  const [initialPromoPrices, setInitialPromoPrices] = useState<Record<string, string>>({});
+  // Preço por variação — chave = comboKey, tanto no cadastro quanto na
+  // edição. Em edição começa com o preço já salvo de cada SKU; combinações
+  // novas (grupo/opção adicionados agora) entram sem preço e ganham SKU ao
+  // salvar. Sempre em tabela, sem alternância "único vs por variação": o
+  // preço do produto é só o menor preço entre as variações.
+  const [variantPrices, setVariantPrices] = useState<Record<string, string>>(
+    Object.fromEntries(skus.map((s) => [s.comboKey, s.price != null ? String(s.price) : ''])),
+  );
+  const [variantPromoPrices, setVariantPromoPrices] = useState<Record<string, string>>(
+    Object.fromEntries(skus.map((s) => [s.comboKey, s.promoPrice != null ? String(s.promoPrice) : ''])),
+  );
   const [initialSimpleQuantity, setInitialSimpleQuantity] = useState('');
   const [initialSimpleCost, setInitialSimpleCost] = useState('');
   const [initialSimpleNote, setInitialSimpleNote] = useState('');
@@ -110,21 +118,24 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
   const hasVariants = filteredVariants.length > 0;
   const isCreatingWithVariants = !isEditing && hasVariants;
 
-  // Linhas/valores de preço por variação — em edição usam o sku.id real; ao
-  // cadastrar (produto ainda não existe) usam o comboKey do rascunho.
-  const variantPriceRows = isEditing
-    ? skus.map((s) => ({ key: s.id, label: s.label, costPrice: s.costPrice, stockQuantity: s.stockQuantity }))
-    : draftAllocatorRows;
-  const variantPrices = isEditing ? skuPrices : initialPrices;
-  const variantPromoPrices = isEditing ? skuPromoPrices : initialPromoPrices;
-  const setVariantPrice = (key: string, value: string) => {
-    if (isEditing) setSkuPrices((prev) => ({ ...prev, [key]: value }));
-    else setInitialPrices((prev) => ({ ...prev, [key]: value }));
-  };
-  const setVariantPromoPrice = (key: string, value: string) => {
-    if (isEditing) setSkuPromoPrices((prev) => ({ ...prev, [key]: value }));
-    else setInitialPromoPrices((prev) => ({ ...prev, [key]: value }));
-  };
+  // Linhas de preço por variação — sempre as combinações atuais do
+  // formulário (não só os SKUs já salvos), senão um grupo/opção adicionado
+  // na edição não teria onde pôr preço e a validação travava o salvar. Em
+  // edição, combinações que já têm SKU mostram custo médio/estoque.
+  const skuByComboKey = useMemo(() => new Map(skus.map((s) => [s.comboKey, s])), [skus]);
+  const variantPriceRows: VariantPriceRow[] = draftAllocatorRows.map((row) => {
+    const sku = skuByComboKey.get(row.key);
+    return sku ? { ...row, costPrice: sku.costPrice, stockQuantity: sku.stockQuantity } : row;
+  });
+  const setVariantPrice = (key: string, value: string) => setVariantPrices((prev) => ({ ...prev, [key]: value }));
+  const setVariantPromoPrice = (key: string, value: string) =>
+    setVariantPromoPrices((prev) => ({ ...prev, [key]: value }));
+
+  // Em edição, o passo Estoque trabalha com os SKUs já salvos — se as
+  // variações mudaram no formulário, elas só aparecem lá depois de salvar.
+  const hasUnsavedVariantChanges =
+    isEditing &&
+    (draftAllocatorRows.length !== skus.length || draftAllocatorRows.some((row) => !skuByComboKey.has(row.key)));
 
   const handleNameChange = (value: string) => {
     setName(value);
@@ -358,12 +369,22 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
         return;
       }
 
-      if (hasVariants && skus.length > 0) {
+      if (hasVariants) {
+        // garante um SKU pra cada combinação atual (cria os das variações
+        // novas) antes de gravar o preço de cada uma
+        let savedSkus: ProductVariantSku[];
+        try {
+          savedSkus = (await listProductVariantSkus(product!.id)).skus;
+        } catch (e) {
+          setSaving(false);
+          setError(`Produto salvo, mas não deu pra criar as variações: ${e instanceof Error ? e.message : String(e)}`);
+          return;
+        }
         const pricingResult = await setVariantSkuPricing(
-          skus.map((sku) => ({
+          savedSkus.map((sku) => ({
             skuId: sku.id,
-            price: parseOptionalNumber(skuPrices[sku.id] ?? ''),
-            promoPrice: parseOptionalNumber(skuPromoPrices[sku.id] ?? ''),
+            price: parseOptionalNumber(variantPrices[sku.comboKey] ?? ''),
+            promoPrice: parseOptionalNumber(variantPromoPrices[sku.comboKey] ?? ''),
           })),
         );
         if (pricingResult.error) {
@@ -386,8 +407,8 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
           return {
             comboKey: key,
             combo,
-            price: parseOptionalNumber(initialPrices[key] ?? ''),
-            promoPrice: parseOptionalNumber(initialPromoPrices[key] ?? ''),
+            price: parseOptionalNumber(variantPrices[key] ?? ''),
+            promoPrice: parseOptionalNumber(variantPromoPrices[key] ?? ''),
           };
         }),
         restock: attemptingInitialVariantStock
@@ -509,7 +530,15 @@ export function ProductForm({ categories, product, hasVariantStock = false, skus
 
         {tabIndex === 2 &&
           (isEditing ? (
-            <RestockPanel product={product!} entries={entries} skus={skus} orphanSkus={orphanSkus} />
+            <>
+              {hasUnsavedVariantChanges && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Você mudou as variações deste produto. Clique em &quot;Salvar alterações&quot; para que elas apareçam aqui
+                  no estoque.
+                </p>
+              )}
+              <RestockPanel product={product!} entries={entries} skus={skus} orphanSkus={orphanSkus} />
+            </>
           ) : (
             <ProductStockStep
               hasVariants={hasVariants}

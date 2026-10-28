@@ -5,7 +5,7 @@ import { formatPrice } from '@/lib/currency';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 
 export interface VariantPriceRow {
-  /** comboKey (produto ainda não existe) ou sku.id (produto já existe) */
+  /** comboKey da combinação (cadastro e edição) */
   key: string;
   label: string;
   /** só disponível em edição, quando o SKU já tem histórico de entradas */

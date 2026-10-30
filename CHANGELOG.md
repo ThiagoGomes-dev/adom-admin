@@ -8,6 +8,9 @@ Cada PR para `develop` adiciona uma linha em **Não lançado**. No PR de release
 
 ## [Não lançado]
 
+### Adicionado
+- `GET /api/reviews`: avaliações do Google Maps (até 5, nota 4 ou mais, com texto) para a seção "Depoimentos" da loja, guardadas por 1 dia. Precisa de `GOOGLE_PLACES_API_KEY` (e opcionalmente `GOOGLE_PLACE_ID`, `GOOGLE_PLACE_QUERY`, `GOOGLE_REVIEWS_MIN_RATING`). Sem a chave devolve lista vazia e a loja mostra os depoimentos fixos.
+
 ## [0.5.0] - 2026-10-28
 
 ### Adicionado

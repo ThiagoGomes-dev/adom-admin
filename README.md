@@ -32,6 +32,17 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 STOREFRONT_ORIGIN=https://seu-site.vercel.app
 ```
 
+Opcional, para a seção "Depoimentos" da loja puxar as avaliações do Google Maps
+(`GET /api/reviews`). Crie a chave no Google Cloud com a **Places API (New)** ativada e
+restrita só a ela. Sem a chave a loja mostra os depoimentos fixos.
+
+```
+GOOGLE_PLACES_API_KEY=...
+GOOGLE_PLACE_ID=...            # opcional; sem ele procura pelo nome abaixo
+GOOGLE_PLACE_QUERY=ADOM formen, Campina Grande - PB  # nome da loja no Google Maps
+GOOGLE_REVIEWS_MIN_RATING=4    # opcional
+```
+
 ### 3. Rodar localmente
 
 ```bash
